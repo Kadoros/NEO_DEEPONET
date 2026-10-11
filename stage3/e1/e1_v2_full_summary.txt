@@ -1,0 +1,278 @@
+48 shapes, 0s
+
+== ratio_surf (max over shapes, loads) ==
+depth                    shallow   mid  deep
+nu   basis                                  
+0.30 elastic_matched_sc    0.198 0.207 0.287
+     elastic_sc            0.634 0.553 0.609
+     neo                    84.9  59.1   113
+     neo_inv2_sc            0.25 0.262 0.317
+     neo_rot                19.5  11.7  40.3
+     neo_rot_inv1_sc         0.2 0.213 0.311
+     neo_rot_inv2_sc       0.196   0.2 0.292
+     neo_rot_sc            0.244 0.267 0.464
+0.45 elastic_matched_sc    0.142 0.134 0.214
+     elastic_sc            0.525 0.467 0.501
+     neo                    88.2    61   107
+     neo_inv2_sc           0.219 0.232 0.285
+     neo_rot                27.9  19.3  47.1
+     neo_rot_inv1_sc        0.18 0.192 0.284
+     neo_rot_inv2_sc       0.166 0.172 0.253
+     neo_rot_sc            0.255 0.256 0.643
+0.49 elastic_matched_sc    0.122 0.111 0.193
+     elastic_sc            0.489 0.447 0.502
+     neo                    95.1    66   110
+     neo_inv2_sc           0.195 0.206 0.252
+     neo_rot                46.6  32.2  66.7
+     neo_rot_inv1_sc       0.165 0.174 0.254
+     neo_rot_inv2_sc       0.151 0.155 0.228
+     neo_rot_sc             0.36 0.285 0.949
+-- ratio_surf (mean) --
+depth                    shallow    mid   deep
+nu   basis                                    
+0.30 elastic_matched_sc   0.0919 0.0849  0.103
+     elastic_sc            0.301  0.309  0.313
+     neo                      14     11   18.6
+     neo_inv2_sc          0.0991  0.102  0.119
+     neo_rot                4.61   3.56   5.79
+     neo_rot_inv1_sc       0.082 0.0812  0.102
+     neo_rot_inv2_sc      0.0773 0.0753 0.0957
+     neo_rot_sc             0.11  0.104  0.146
+0.45 elastic_matched_sc   0.0714 0.0682 0.0872
+     elastic_sc            0.254  0.245   0.27
+     neo                    13.5   10.6   18.6
+     neo_inv2_sc          0.0888 0.0897  0.108
+     neo_rot                 5.7   4.55   7.74
+     neo_rot_inv1_sc      0.0751 0.0741 0.0946
+     neo_rot_inv2_sc      0.0695 0.0672 0.0865
+     neo_rot_sc            0.139  0.132  0.188
+0.49 elastic_matched_sc   0.0556 0.0474 0.0618
+     elastic_sc            0.236  0.223  0.246
+     neo                    14.8   11.7   20.4
+     neo_inv2_sc          0.0805 0.0804 0.0955
+     neo_rot                8.64   6.91   11.9
+     neo_rot_inv1_sc      0.0701  0.069 0.0873
+     neo_rot_inv2_sc      0.0633 0.0605 0.0769
+     neo_rot_sc            0.213  0.198  0.269
+
+== ratio_int (max over shapes, loads) ==
+depth                    shallow   mid  deep
+nu   basis                                  
+0.30 elastic_matched_sc    0.197 0.193  0.26
+     elastic_sc            0.495 0.467 0.529
+     neo                    63.6  41.8   118
+     neo_inv2_sc           0.233 0.231  0.25
+     neo_rot                20.2  11.7  42.5
+     neo_rot_inv1_sc       0.209 0.209 0.254
+     neo_rot_inv2_sc       0.202 0.196 0.236
+     neo_rot_sc            0.236 0.237 0.312
+0.45 elastic_matched_sc    0.143 0.133 0.187
+     elastic_sc            0.456 0.397 0.457
+     neo                    66.9  43.2   112
+     neo_inv2_sc           0.202 0.207 0.238
+     neo_rot                24.6  14.9  49.7
+     neo_rot_inv1_sc       0.189 0.191 0.249
+     neo_rot_inv2_sc       0.173 0.169 0.226
+     neo_rot_sc            0.228 0.231 0.591
+0.49 elastic_matched_sc    0.126 0.115 0.164
+     elastic_sc            0.437 0.372 0.436
+     neo                      73  47.1   115
+     neo_inv2_sc           0.181 0.188 0.228
+     neo_rot                38.1  24.5  70.2
+     neo_rot_inv1_sc       0.174 0.177 0.236
+     neo_rot_inv2_sc       0.155 0.153 0.213
+     neo_rot_sc            0.304 0.243 0.862
+-- ratio_int (mean) --
+depth                    shallow    mid   deep
+nu   basis                                    
+0.30 elastic_matched_sc   0.0925 0.0867  0.101
+     elastic_sc            0.267  0.281  0.293
+     neo                    11.1   8.06   15.6
+     neo_inv2_sc          0.0997 0.0965  0.107
+     neo_rot                 3.2   2.22    4.5
+     neo_rot_inv1_sc      0.0881 0.0833 0.0965
+     neo_rot_inv2_sc      0.0823 0.0759 0.0888
+     neo_rot_sc            0.112  0.105  0.135
+0.45 elastic_matched_sc    0.071 0.0666 0.0818
+     elastic_sc             0.23  0.229  0.241
+     neo                    11.4   8.35     16
+     neo_inv2_sc          0.0883  0.086 0.0973
+     neo_rot                4.89   3.59   6.77
+     neo_rot_inv1_sc       0.081  0.077 0.0911
+     neo_rot_inv2_sc      0.0729 0.0674 0.0809
+     neo_rot_sc            0.136  0.121  0.164
+0.49 elastic_matched_sc   0.0553  0.048 0.0592
+     elastic_sc            0.215  0.213  0.223
+     neo                    12.8   9.43   17.7
+     neo_inv2_sc          0.0798 0.0773 0.0876
+     neo_rot                7.69   5.69   10.5
+     neo_rot_inv1_sc      0.0759 0.0722 0.0856
+     neo_rot_inv2_sc      0.0664 0.0614 0.0738
+     neo_rot_sc            0.192   0.16  0.219
+
+== pass rate ratio_surf<=0.2 & ratio_int<=0.2 ==
+depth                    shallow    mid  deep
+nu   basis                                   
+0.30 elastic_matched_sc        1  0.938 0.812
+     elastic_sc             0.25  0.344 0.312
+     neo                       0      0     0
+     neo_inv2_sc           0.938  0.875 0.781
+     neo_rot              0.0312 0.0312     0
+     neo_rot_inv1_sc       0.938  0.938 0.875
+     neo_rot_inv2_sc       0.938  0.969 0.875
+     neo_rot_sc            0.875  0.938  0.75
+0.45 elastic_matched_sc        1      1 0.906
+     elastic_sc              0.5  0.375 0.375
+     neo                       0      0     0
+     neo_inv2_sc           0.938  0.938 0.875
+     neo_rot                   0      0     0
+     neo_rot_inv1_sc           1      1 0.875
+     neo_rot_inv2_sc           1      1 0.875
+     neo_rot_sc             0.75  0.938 0.688
+0.49 elastic_matched_sc        1      1     1
+     elastic_sc              0.5  0.438 0.438
+     neo                       0      0     0
+     neo_inv2_sc               1  0.938 0.875
+     neo_rot                   0      0     0
+     neo_rot_inv1_sc           1      1 0.875
+     neo_rot_inv2_sc           1      1 0.938
+     neo_rot_sc              0.5  0.594   0.5
+
+== relL2 (mean) ==
+                         relL2_hom  relL2_lump  span_modes
+nu   basis                                                
+0.30 elastic_matched_sc   1.41e-10     0.00354   -4.37e-16
+     elastic_sc           2.35e-10      0.0114   -4.65e-16
+     neo                     0.235       0.236     0.00678
+     neo_inv2_sc          1.13e-10     0.00376    1.76e-06
+     neo_rot                0.0704      0.0718    0.000967
+     neo_rot_inv1_sc      8.18e-11     0.00332    5.27e-06
+     neo_rot_inv2_sc      1.04e-10     0.00306    6.96e-08
+     neo_rot_sc           1.32e-09     0.00443    0.000967
+0.45 elastic_matched_sc   8.37e-11     0.00313   -2.91e-16
+     elastic_sc           1.15e-10     0.00971   -3.26e-16
+     neo                     0.249        0.25     0.00645
+     neo_inv2_sc          8.55e-08     0.00352     9.7e-07
+     neo_rot                 0.109       0.111     0.00129
+     neo_rot_inv1_sc      5.45e-08     0.00323    3.84e-06
+     neo_rot_inv2_sc      7.48e-08     0.00285    4.71e-08
+     neo_rot_sc           1.96e-09      0.0059     0.00129
+0.49 elastic_matched_sc   3.51e-08     0.00224   -4.02e-16
+     elastic_sc           4.44e-08     0.00902    -3.4e-16
+     neo                      0.29       0.291     0.00634
+     neo_inv2_sc          2.81e-08     0.00325    7.41e-07
+     neo_rot                 0.175       0.177     0.00141
+     neo_rot_inv1_sc      4.35e-08     0.00308    2.93e-06
+     neo_rot_inv2_sc      5.83e-08     0.00267    4.02e-08
+     neo_rot_sc           3.45e-09     0.00867     0.00141
+
+== lump signal size (mean) ==
+      signal_int                signal_surf               
+depth       deep    mid shallow        deep    mid shallow
+nu                                                        
+0.30      0.0406 0.0533  0.0505      0.0314 0.0459  0.0494
+0.45      0.0425 0.0548   0.052       0.033 0.0475  0.0516
+0.49      0.0433 0.0555  0.0526      0.0336 0.0482  0.0524
+
+== cost per shape and nu (median, seconds; 8 jobs in parallel, 2 threads each) ==
+t_neo_s             0.18
+t_replicate_s       0.12
+t_rotfields_s      0.124
+t_orth_rr_s         7.63
+t_lu_s              55.9
+t_iter1_s           99.3
+t_iter2_s            101
+t_elastic_eigs_s     757
+t_assemble_K_s      1.27
+t_full_solve_s      65.2
+-- break-even: number of solves with new coefficients E(x) (same load) after which (c) is cheaper --
+                       t_basis_c  t_full_solve_s  t_reduced  breakeven_new_coef
+family       idx nu                                                            
+c_tube       0   0.30        152            40.3       6.41                   6
+                 0.45        144            43.6       7.59                   6
+                 0.49        149            39.8       5.58                   6
+             1   0.30        156            41.2       7.53                   6
+                 0.45        165            38.9       7.42                   7
+                 0.49        160            38.5        6.9                   7
+cup          0   0.30        259            93.5       5.29                   4
+                 0.45        267            83.2       5.69                   5
+                 0.49        271            82.8       5.58                   5
+             1   0.30        272            80.3        6.3                   5
+                 0.45        312            80.1       6.97                   6
+                 0.49        305            74.2       6.13                   6
+elongated    0   0.30        189            39.3       6.85                   8
+                 0.45        192              35       5.91                   8
+                 0.49        206            32.5       6.16                  10
+             1   0.30        232            33.8        5.4                  10
+                 0.45        185            43.6       6.25                   7
+                 0.49        179            50.5       5.46                   6
+multihole    0   0.30        275            60.1       5.47                   7
+                 0.45        252            67.8       6.08                   6
+                 0.49        330            62.9        5.3                   7
+             1   0.30        249            44.2        6.3                   8
+                 0.45        241            48.2       6.29                   7
+                 0.49        234            50.1       6.02                   7
+sh_ball      0   0.30        406             131       6.02                   5
+                 0.45        412             135       7.32                   5
+                 0.49        406             127       5.95                   5
+             1   0.30        416             145       7.63                   5
+                 0.45        420             174       7.55                   4
+                 0.49        418             146       7.99                   5
+shell        0   0.30        454             103       7.95                   6
+                 0.45        400             118       6.79                   5
+                 0.49        362             112       5.74                   5
+             1   0.30        403             104       6.87                   6
+                 0.45        420             102       6.28                   6
+                 0.49        391             103       6.44                   6
+superquadric 0   0.30        245            63.5       5.39                   6
+                 0.45        246            63.5       5.31                   6
+                 0.49        252            69.7       7.33                   6
+             1   0.30        323            97.8        7.9                   5
+                 0.45        366            89.1       6.03                   6
+                 0.49        379            89.3       6.37                   6
+torus        0   0.30        240              58       6.25                   6
+                 0.45        245            53.2       6.44                   7
+                 0.49        241            54.8       5.97                   7
+             1   0.30        210            66.3       7.14                   5
+                 0.45        241            47.5       6.53                   8
+                 0.49        203            51.5       6.61                   6
+
+== ANP spectrum per shape (n_zero = rigid zeros, should be 6) ==
+                 lam12               lam7               n_zero          
+nu                0.30  0.45  0.49   0.30   0.45   0.49   0.30 0.45 0.49
+family       idx                                                        
+c_tube       0   0.825 0.812 0.813 0.0293 0.0296 0.0297      6    6    6
+             1   0.989 0.983 0.983 0.0401 0.0406 0.0408      6    6    6
+cup          0    1.46  1.42  1.42  0.278  0.267  0.266      6    6    6
+             1    1.85  1.81  1.81  0.437  0.418  0.415      6    6    6
+elongated    0    2.26  2.23  2.22  0.375  0.373  0.372      6    6    6
+             1    1.76  1.74  1.73  0.286  0.284  0.284      6    6    6
+multihole    0    1.95  1.89  1.88  0.418  0.383  0.376      6    6    6
+             1    1.99  1.94  1.93  0.429  0.395  0.388      6    6    6
+sh_ball      0    3.62  3.28   3.2   1.92   1.74   1.69      6    6    6
+             1    3.44  3.14  3.07    1.7   1.59   1.56      6    6    6
+shell        0    2.23  2.02  1.97   1.77   1.64   1.61      6    6    6
+             1    2.25  2.02  1.97   1.57   1.47   1.46      6    6    6
+superquadric 0    4.15  3.87   3.8   1.33   1.29   1.28      6    6    6
+             1    3.81  3.83  3.75    1.5   1.38   1.35      6    6    6
+torus        0    1.73  1.63  1.61  0.314    0.3  0.297      6    6    6
+             1    1.28  1.22  1.21  0.213  0.204  0.203      6    6    6
+
+== shape indicators ==
+         family  idx  korn  thick  dmax
+0       sh_ball    0  7.02  0.463 0.613
+0       sh_ball    1  7.34  0.476 0.666
+0  superquadric    0  12.4  0.426  0.49
+0  superquadric    1  9.27  0.411 0.534
+0         torus    0  46.7  0.276   0.3
+0         torus    1    72  0.253 0.249
+0           cup    0  41.2  0.157 0.182
+0           cup    1  26.8  0.173  0.21
+0         shell    0  6.15  0.245 0.368
+0         shell    1  6.45  0.208 0.317
+0     elongated    0  47.7  0.343  0.27
+0     elongated    1    49  0.342 0.303
+0     multihole    0  32.2  0.272   0.3
+0     multihole    1  33.2  0.274 0.287
+0        c_tube    0   205  0.267 0.186
+0        c_tube    1   143  0.286 0.228

@@ -1,0 +1,5 @@
+{
+  "name": "run0",
+  "status": "early-stopped (val@30k 0.1645 > 1.2x ref 0.1255)",
+  "best_val_at_30k": 0.1645
+}

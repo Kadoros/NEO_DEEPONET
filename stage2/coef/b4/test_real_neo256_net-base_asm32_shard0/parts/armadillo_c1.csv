@@ -1,0 +1,2 @@
+name,n_true,n_comp,n_split,oracle,loss_fit,loss_final,t_s,s1_rel_l2,s1_in_lump,s1_n_fit,s1_n_matched,s1_n_false,s2_rel_l2,s2_in_lump,s2_n_fit,s2_n_matched,s2_n_false,values,widths,per_lump
+armadillo_c1,1,1,0,0.0001723216712185525,0.00016291915480292612,0.00016291915480292612,204.3649296760559,0.37401290627159894,1.6823247361119078,1,1,0,0.07124658912957467,4.029707960844354,1,1,0,[4.211],[0.0112],"[{""centre_err"": 0.001746429319637111, ""radius_err"": 0.012286587676349187, ""value"": 4.211411100245234}]"

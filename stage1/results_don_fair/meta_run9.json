@@ -1,0 +1,14 @@
+{
+  "name": "DON-base (\uc815\uaddc\ud654) p=128 lr=0.001",
+  "p": 128,
+  "lr": 0.001,
+  "matched": false,
+  "alpha": 1.0,
+  "params": 256065,
+  "train_s": 2362.477315785829,
+  "steps": 108000,
+  "best_val": 0.09784002602100372,
+  "status": "plateau",
+  "test_mean": 0.10091841965913773,
+  "infer_ms": 1.3841574106158483
+}

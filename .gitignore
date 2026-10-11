@@ -1,0 +1,34 @@
+# --- weights / arrays / datasets (too large for GitHub) ---
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.mat
+*.hdf5
+*.h5
+*.pkl
+*.ply
+*.stl
+*.pack
+*.zip
+*.tgz
+*.tar
+*.tar.gz
+data/
+
+# --- logs ---
+logs/
+*.log
+*.out
+*.err
+
+# --- python / editor ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+
+# --- external repos (cloned, not ours; see EXTERNAL_REPOS.md) ---
+NEO/
+baselines/point-deeponet/

@@ -1,0 +1,17 @@
+{
+  "tag": "test_arpack256_net-base",
+  "shapes": 20,
+  "lumps": 38,
+  "s1_matched": 34,
+  "s1_false": 1,
+  "s2_matched": 38,
+  "s2_false": 6,
+  "splits": 9,
+  "s1_in_lump": 2.22224615630735,
+  "s2_in_lump": 4.12868644387534,
+  "s1_rel_l2": 0.2648533983323284,
+  "s2_rel_l2": 0.0666032957364723,
+  "matched_value_mean": 4.860602608551262,
+  "matched_value_median": 4.609596836507714,
+  "t_total_s": 7118.984205007553
+}

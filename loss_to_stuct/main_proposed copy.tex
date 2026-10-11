@@ -1,0 +1,2377 @@
+\documentclass{article}
+\usepackage{iclr2027_conference,times}
+
+\input{math_commands.tex}
+
+% --- math first, hyperref late -------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\graphicspath{{../}{./}}
+\usepackage{enumitem}
+\usepackage{wrapfig}
+\usepackage{longtable}  % for longtable
+\usepackage{float}      % for [H]
+
+\usepackage{hyperref}
+\usepackage{url}
+
+\newtheorem{remark}{Remark}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+
+% --- arm names -----------------------------------------------------------
+\newcommand{\armraw}{\textsc{Raw}}
+\newcommand{\armpi}{\textsc{PI}}
+\newcommand{\armprior}{\textsc{Prior}}
+\newcommand{\armstruct}{\textsc{Prior-Struct}}
+\newcommand{\armrand}{\textsc{Prior-Rand}}
+\newcommand{\armpod}{\textsc{Prior-POD}}
+\newcommand{\tbd}{\textcolor{red}{TBD}}
+
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+
+\title{From Physics-Informed Losses to \\ Equation-Derived Priors and Representations \\ for Neural Operators}
+
+\author{Anonymous}
+
+%\iclrfinalcopy
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+When governing equations are known but solution data are scarce, equation knowledge can be used not only as a training constraint but also as an inductive bias for the neural operator. We study three ways of exposing equation information: enforcing the equation as a loss, using it to construct an equation-derived prior, and injecting the structure it reveals into the residual. Our idea is to use the governing equation to reduce the learning problem before training. Across the benchmarks that admit a physics-informed loss, the equation-derived prior generally outperforms imposing the same equation as a training loss, and some problems benefit further from structural injection beyond the prior. These results suggest that equation knowledge is most effective when it is used to shape the representation before training, rather than treated solely as a training constraint.
+\end{abstract}
+
+
+\section{Introduction}
+\label{sec:intro}
+\vspace{-3mm}
+Numerical solvers for partial differential equations (PDEs) are central to computational science and engineering, but each run solves a single instance. Design optimization, uncertainty quantification, inverse problems and control all require the same equation to be solved repeatedly across a family of parameters, geometries or boundary conditions, and the cost of rerunning a high-fidelity solver for every query quickly dominates \citep{forrester2009surrogate,psaros2023uncertainty}.
+
+Neural operators are the standard surrogate for this setting: rather than approximating a single solution, they learn a map from parametric inputs to solution fields that generalizes across the family \citep{lu2021learning,lee2023hyperdeeponet,li2020fourier,hao2023gnot,wang2024cvit}. Their accuracy depends on the amount of labeled solution data, and every label is itself a high-fidelity solve, so labeled data are most expensive in precisely the settings where a surrogate is most needed.
+
+When a governing equation is known, even approximately, it can stand in for part of that data. The standard route is to add its residual to the training objective \citep{raissi2019physics}: the network is penalized for violating the equation while still representing the entire solution field, and the same idea carries over to operator learning \citep{li2024physics,wang2021learning}. This reduces the labeled-data requirement, but the equation enters only through the objective, and even where it is exact, a lower residual loss does not guarantee a more accurate solution \citep{chen2026training}.
+
+An alternative is to use the equation before training, and prior work does so in three ways. A data-derived reference gives the learner a starting point to correct: a reduced basis from snapshots \citep{sirovich1987turbulence,barrault2004eim,chaturantabut2010nonlinear}, which POD-DeepONet places in the trunk of the operator \citep{lu2022}, a low-fidelity solution \citep{meng2020multifidelity}, or a retrieved neighbor whose residual is learned \citep{yue2025deltaphi}. Model-form correction starts instead from an
+approximate simulator and learns its discrepancy, classically with a Gaussian process \citep{kennedy2001bayesian, brynjarsdottir2014learning} and recently with a second operator trained under the misspecified residual \citep{ma2026physics}. A third line keeps the
+approximate equation inside training, as a solver in the loop \citep{um2020solver,kochkov2021machine}, as simplified forms trained jointly \citep{ma2026learning}, or as an architecture aligned to structure found in data \citep{roohi2026shock,dang2026smooth}. These approaches typically rely on learned, data-derived, or simulator-provided references, rather than asking what reusable representation can be extracted directly from an approximate equation before training: a solvable field, an invariant, a low-dimensional instance factor, a basis, or a coordinate transformation, all obtained without labels or a learned reference. Section~\ref{sec:framework} places these uses in one factorization, and Appendix~\ref{app:related} returns to the closest of them.
+
+The equation can enter the learning problem at three levels, depending on what the construction exposes. Writing the progression as
+\begin{equation}
+  \mathcal{F}_0
+  \;\longrightarrow\;
+  u_p + r
+  \;\longrightarrow\;
+  u_p + \Phi_{\mathcal{F}_0}\beta_\theta + \epsilon_\theta,
+  \label{eq:progression}
+\end{equation}
+the equation enters as a \emph{constraint} through a residual penalty, as a \emph{prior} $u_p$ that fixes part of the solution map before training, and as a \emph{representation} $\Phi_{\mathcal{F}_0}$ in which the remaining residual is learned; we refer to these as Levels~1, 2 and 3. The question we study is how much of a neural operator's target an approximate equation can resolve before training, and when the remainder admits a reusable representation. 
+Here, \(r=u-u_p\) denotes the residual left after removing the equation-derived prior (Eq.~\ref{eq:decomp}); when the construction exposes reusable structure, the part of \(r\) in the span of \(\Phi_{\mathcal{F}_0}\) is recovered through learned coefficients \(\beta_\theta\), and a generic learned corrector \(\epsilon_\theta\) absorbs the remainder (Eq.~\ref{eq:structural_injection}).
+Our main contributions are as follows:
+\begin{itemize}[leftmargin=*,itemsep=0pt]
+    \item We formulate three distinct ways in which the same approximate equation can enter operator learning (as a loss, a prior, or a residual representation) and compare them under matched backbones and data budgets.
+    \item We construct equation-derived priors for eighteen benchmarks, and residual bases for the six that expose one, from numerical solves of the approximate equation to spectral, transfer-matrix and complex-potential forms.
+    \item We compare the prior against the same equation used as a loss, including a loss with oracle-selected weight, and against a raw operator on the benchmarks where no matched residual loss can be formed.
+    \item We introduce structural injection, which learns the residual in the equation-derived basis, against two controls of the same width: a random basis and one built from the training residuals by POD.
+\end{itemize}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=1.2\linewidth]{overview.pdf}
+    \vspace{-6mm}
+    \caption{\textbf{Overview (placeholder).} An approximate equation $\mathcal{F}_0$ can enter operator learning at three levels (Eq.~\ref{eq:progression}): as a residual penalty (Level~1), as an equation-derived prior $u_p$ that fixes part of the solution map before training (Level~2), and as a representation $\Phi_{\mathcal{F}_0}$ in which the remaining residual is learned (Level~3). \tbd\ final figure.}
+    \label{fig:overview}
+    \vspace{-5mm}
+\end{figure}
+
+\vspace{-3mm}
+\section{Equation Information as a Representation}
+\label{sec:framework}
+\vspace{-3mm}
+We consider a family of problems parameterized by an input $a\in\mathcal{A}$ collecting coefficients, sources, geometry or material data. For each instance the solution $u(x;a)$, at a spatial or query coordinate $x$ of a domain $\Omega$, satisfies a governing equation $\mathcal{F}$ and a boundary condition $\mathcal{B}$,
+\begin{equation}
+  \mathcal{F}\!\left(u;a\right)=0\ \ \text{in}\ \Omega,
+  \qquad
+  \mathcal{B}\!\left(u;a\right)=0\ \ \text{on}\ \partial\Omega,
+  \label{eq:governing}
+\end{equation}
+and we learn an approximation $\mathcal{G}_\theta:\mathcal{A}\to\mathcal{U}$ of the solution operator $\mathcal{G}:a\mapsto u(\cdot\,;a)$, writing $\hat u_\theta(x;a)=\mathcal{G}_\theta(a)(x)$, or $\hat u$ when $\theta$ is clear. Two properties define the setting. Labels are scarce: the sample $\mathcal{D}_N=\{(a_i,u_i)\}_{i=1}^{N}$ has small $N$. And $\mathcal{F}$ is known only approximately, through an operator $\mathcal{F}_0$ that is typically the same equation with a simplified coefficient, closure, interface condition or geometry,
+\begin{equation}
+  \mathcal{F}(u;a)=\mathcal{F}_0(u;a)+\Delta(u;a),
+  \label{eq:model-error}
+\end{equation}
+where $\Delta$ is the omitted part, unknown and not assumed small. On most benchmarks it acts in the interior and $\mathcal{B}$ is shared. A simplified interface condition or geometry instead moves it onto interfaces, as on 3D layered and annulus, or onto the boundary itself, as on elasticity, whose prior replaces a finite plate by an infinite one.
+
+\textbf{Level 1: the equation as a constraint.}
+The standard use adds the residual of $\mathcal{F}_0$, with a weight $\lambda>0$, to the supervised objective \citep{raissi2019physics,li2024physics,wang2021learning},
+\begin{equation}
+  \mathcal{L}
+  =\frac{1}{N}\sum_{i=1}^{N}\bigl\|\hat u_\theta(\cdot\,;a_i)-u_i\bigr\|^{2}
+   +\lambda\bigl\|\mathcal{F}_0(\hat u_\theta;a)\bigr\|_{L^{2}(\Omega)}^{2},
+  \label{eq:pde-loss}
+\end{equation}
+with the penalty evaluated at collocation points. The target is still the full field $u$, and where $\mathcal{F}_0$ is wrong the penalty moves it.
+\begin{proposition}[Population bias of the residual penalty]
+\label{prop:pi-bias}
+Let $\mathcal{F}_0(v)=L_0v-f$ with $L_0$ linear. Over all fields $v$, the minimizer of $\|v-u\|^{2}+\lambda\|\mathcal{F}_0(v)\|^{2}$ is
+$v_\lambda=u+\lambda\bigl(I+\lambda L_0^{\!\top}L_0\bigr)^{-1}L_0^{\!\top}\Delta(u)$.
+\end{proposition}
+The displacement vanishes only when $\Delta(u)=0$ and does not involve $N$: more labels do not remove it, and $\lambda$ sets its size. This concerns the population minimizer; a finite-sample estimator need not reach $v_\lambda$ (Appendix~\ref{app:identities}).
+
+\textbf{Levels 2 and 3: the equation before training.}
+The alternative uses $\mathcal{F}_0$ before training, through a construction $\mathcal{S}$ that is cheap relative to a high-fidelity solve and consumes no solution labels, with one exception (Section~\ref{sec:airfrans}). It changes what is learned rather than how: what $\mathcal{F}_0$ determines is removed from the target, labels are spent only on the remainder, and $\Delta$ is left for data to correct rather than imposed on the fit. In our benchmarks the construction returns one of three objects. A \emph{direct prior} is a field solved from $\mathcal{F}_0$, by a numerical solve, a spectral expansion, a transfer matrix, an effective-medium coefficient or a complex potential,
+\begin{equation}
+u_p(\cdot\,;a)=\mathcal{S}(\mathcal{F}_0,a).
+\label{eq:prior-solve}
+\end{equation}
+An \emph{indirect prior} starts from an instance-side factor $\psi_{\mathcal{F}_0}(a)\in\mathbb{R}^d$, a few numbers per instance that the equation fixes, such as $q(a)\,(1,\alpha)^{\!\top}$ for an airfoil with dynamic pressure $q$ and incidence $\alpha$ (Section~\ref{sec:airfrans}). Only its spatial profile $c(x)\in\mathbb{R}^d$ is fitted, by least squares over the $N$ labeled instances at each query point,
+\begin{equation}
+u_p(x;a)=c(x)^{\!\top}\psi_{\mathcal{F}_0}(a),
+\qquad
+c(x)=\arg\min_{c\in\mathbb{R}^d}\ \sum_{i=1}^{N}\bigl(c^{\!\top}\psi_{\mathcal{F}_0}(a_i)-u_i(x)\bigr)^{2},
+\label{eq:prior_ls}
+\end{equation}
+so the labels determine $d$ numbers per query point and $N\ge d$ instances suffice. Either prior leaves the residual
+\begin{equation}
+r(x;a)=u(x;a)-u_p(x;a),
+\label{eq:decomp}
+\end{equation}
+for learning. For a direct prior this residual is not an arbitrary leftover.
+\begin{lemma}[Residual identity]
+\label{lem:residual-identity}
+Let $\mathcal{F}_0(v)=L_0v-f$ with $L_0$ linear and invertible under the boundary condition $u$ and $u_p$ share, and let $\mathcal{F}_0(u_p)=0$. Then $r=-L_0^{-1}\Delta(u)$.
+\end{lemma}
+The residual is the known inverse operator applied to the omitted term, so its form follows from where $\Delta$ acts. An interior term expands in the eigenbasis $(\phi_m,\lambda_m)$ of $L_0$ with coefficients damped by $\lambda_m^{-1}$: on 2D Poisson the prior drops $\mu u$ from $-\nabla^2u+\mu u=f$, and with $\hat f_m$ the coefficients of $f$, on the modes it keeps $r=\sum_m\hat f_m\bigl[(\lambda_m+\mu)^{-1}-\lambda_m^{-1}\bigr]\phi_m$. A term on interfaces or on the outer boundary, as on 3D layered, annulus and elasticity, lies outside the lemma, but $r$ then solves the homogeneous equation $L_0r=0$ away from them. A \emph{representation} supplies that family as a basis $\Phi_{\mathcal{F}_0}(x;a)$ for the residual, with coefficients $\beta(a)$ and a remainder $\epsilon$ outside its span,
+\begin{equation}
+r(x;a)=\Phi_{\mathcal{F}_0}(x;a)\,\beta(a)+\epsilon(x;a),
+\label{eq:structure}
+\end{equation}
+such as the modal basis of a spectral expansion, the layerwise solutions of a transfer matrix, the Laurent basis of a conformal map, or, where the omitted term is not differential, the sensitivity directions of the prior. The three outputs are therefore
+\begin{equation}
+\begin{aligned}
+& \text{direct prior:}\quad
+\mathcal{S}(\mathcal{F}_0,a) \longrightarrow u_p, \qquad
+\text{indirect prior:}\quad
+\psi_{\mathcal{F}_0}
+  \xrightarrow{\text{fit from data}} u_p,\\
+& \text{representation:}\quad
+\Phi_{\mathcal{F}_0}
+  \xrightarrow{\text{learn coefficients}} \beta_\theta,
+\end{aligned}
+\label{eq:solve_outputs}
+\end{equation}
+the two priors realizing Level~2 of Eq.~\ref{eq:progression} and the representation Level~3. Table~\ref{tab:constructions} in Appendix~\ref{app:priors} names the construction and output for every benchmark, and the subsections there derive them.
+
+\textbf{One factorization.}
+The three levels can be compared inside the branch--trunk form the backbone already has. Write the prediction as an anchor field $u_0$ plus the inner product of an instance-side factor $\psi(a)$, produced by the branch, and a query-side factor $\varphi(x;a)$, produced by the trunk, with every learned part trained jointly to fit a target $u^\dagger$ in a metric $M$:
+\begin{equation}
+  \hat u(x;a) = u_0(x;a) + \psi(a)^{\!\top}\varphi(x;a),
+  \qquad
+  \min_{\theta}\ \mathbb{E}_{a}\bigl\|\hat u(\cdot\,;a)-u^{\dagger}(\cdot\,;a)\bigr\|_{M}^{2}.
+  \label{eq:slots}
+\end{equation}
+Each use of the equation fills one of these four slots (Table~\ref{tab:slots}), and leaving all four at their data-driven defaults gives a raw operator.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{The four slots of Eq.~\ref{eq:slots}.} Each use of $\mathcal{F}_0$ fills one
+    slot and leaves the rest at their data-driven defaults; with every slot at its default the model
+    is a raw operator. The objective row is Proposition~\ref{prop:pi-bias} written as a target and a
+    metric.}
+    \label{tab:slots}
+    \scriptsize
+    \setlength{\tabcolsep}{20pt}
+    \renewcommand{\arraystretch}{1}
+    \begin{tabular}{llllc}
+        \toprule
+        Slot & Default & Filled by the equation & Use & Level \\
+        \midrule
+        objective $(u^\dagger,M)$ & $(u,\,I)$ & $(v_\lambda,\ I+\lambda L_0^{\!\top}L_0)$ & residual loss & 1 \\
+        anchor $u_0$ & $0$ & $u_p$ & direct prior & 2 \\
+        instance side $\psi$ & learned & $\psi_{\mathcal{F}_0}$ & indirect prior & 2 \\
+        query side $\varphi$ & learned & $\Phi_{\mathcal{F}_0}$ & representation & 3 \\
+        \bottomrule
+    \end{tabular}
+    \vspace{-5mm}
+\end{table}
+
+The objective row restates Proposition~\ref{prop:pi-bias}: completing the square in Eq.~\ref{eq:pde-loss} turns the penalty into a fit to $v_\lambda$ in the metric $M$, which reweights the error and, unless $\Delta(u)=0$, also moves the target. The indirect prior alone consumes labels because the equation fixes one factor and the data fit the other. A model may combine slots, and may fill a slot only up to a learned factor, the equation supplying a multiplier and the network the rest (Sections~\ref{sec:structural_injection} and~\ref{sec:airfrans}). Appendix~\ref{app:anchor} compares the equation anchor with five data-derived ones. The factorization is used to compare formulations, not to claim that every use of an equation occupies exactly one slot.
+
+\section{Method}
+\label{sec:method}
+\vspace{-3mm}
+\subsection{Prior with a generic corrector}
+\label{sec:generic_corrector}
+
+The Level~2 model adds a learned corrector to either prior,
+\begin{equation}
+\hat u_\theta(x;a)=u_p(x;a)+r_\theta(x;a),
+\qquad
+r_\theta(x;a)=\sum_{i=1}^{p}b_{\theta,i}(a)\,t_{\theta,i}(x),
+\label{eq:generic_corrector}
+\end{equation}
+where $r_\theta$ is the backbone operator, written here in the DeepONet form with branch $b_\theta$ and trunk $t_\theta$; with an FNO backbone it is the FNO itself. Under DeepONet the last linear layer of the corrector is initialized to zero, so training starts at $u_p$ up to the mean of the training residuals, and labels are spent only on the residual $r$ of Eq.~\ref{eq:decomp}. Under \textsc{FNO} the corrector keeps its standard initialization: zero-initializing its last layer leaves the body of the network with no data gradient, which weight decay then drives to zero (Appendix~\ref{app:e1-setting}).
+
+\subsection{Structural Injection}
+\label{sec:structural_injection}
+
+In DeepONet terms, structural injection replaces part of the learned trunk representation with basis functions derived directly from the approximate equation, leaving the network to learn primarily their instance-dependent coefficients and the remaining correction.
+
+When the construction exposes a representation, the Level~3 model learns $r$ in the form of Eq.~\ref{eq:structure}, so that the part in the span of $\Phi_{\mathcal{F}_0}$ is recovered by estimating coefficients rather than by learning a spatial form,
+\begin{equation}
+\hat u_\theta(x;a)=u_p(x;a)+\sum_{k=1}^{n_b}\beta_{\theta,k}\,\Phi_{\mathcal{F}_0,k}(x;a)+\epsilon_\theta(x;a),
+\label{eq:structural_injection}
+\end{equation}
+where $\beta_\theta$ is a learned map onto the coefficients $\beta$, and $\epsilon_\theta$, the learned counterpart of $\epsilon$, is the corrector $r_\theta$ of Eq.~\ref{eq:generic_corrector} in its DeepONet form, retained unchanged; nothing confines it to the complement of the span. Both start at zero, and $\beta_\theta=0$ with $\epsilon_\theta=r_\theta$ recovers Eq.~\ref{eq:generic_corrector} exactly. The two branches are trained in stages within one loss,
+\begin{equation}
+\mathcal{L}_{\mathrm{struct}}
+=\ell\bigl(u_p+\Phi_{\mathcal{F}_0}\beta_\theta\bigr)
++\ell\bigl(u_p+\operatorname{sg}[\Phi_{\mathcal{F}_0}\beta_\theta]+\epsilon_\theta\bigr),
+\label{eq:staged-loss}
+\end{equation}
+where $\ell$ is the relative $L_2$ error against $u$ and $\operatorname{sg}$ stops the gradient: the structured branch fits the whole residual and $\epsilon_\theta$ only what it leaves, the division of Eq.~\ref{eq:structure}. A joint loss on the sum lets the two branches grow and cancel. The prediction is still Eq.~\ref{eq:structural_injection}.
+
+\textbf{Instance and spatial factors.}
+We write $a=(a_f,a_g)$, where $a_f$ collects the source, boundary or load data on which $r$ depends linearly and $a_g$ the parameters that fix the domain or its layout, and factor each column as $\Phi_{\mathcal{F}_0,k}(x;a)=F_k(a_f)\,S_k(x;a_g)$: the source factor $F_k$ is a coefficient of $a_f$ in the basis the construction uses, and the spatial factor $S_k$ is the field it multiplies. Eq.~\ref{eq:structural_injection} becomes
+\begin{equation}
+\hat u_\theta(x;a)=u_p(x;a)+\sum_{k=1}^{n_b}F_k(a_f)\,\beta_{\theta,k}(a_g)\,S_k(x;a_g)+\epsilon_\theta(x;a).
+\label{eq:factorized}
+\end{equation}
+Because $F$ carries all dependence on $a_f$, the coefficients $\beta$ depend on $a$ only through $a_g$, and so does $\beta_\theta$. It is a learned constant vector when $a_g$ is empty, and $F_k\equiv1$ when $r$ has no linear instance data. Appendix~\ref{app:phi-factorization} gives $F$, $a_g$ and $S$ for each benchmark, in one of five forms: a fixed eigenbasis, a separable basis, geometry-dependent fields shared by every coefficient of $a_f$, a sensitivity of the prior, and a response of the prior operator itself.
+
+Because the structured branch adds parameters, Section~\ref{sec:exp1} compares it with capacity-matched controls that replace $S$ (Appendix~\ref{app:e1-setting}); its relation to POD-DeepONet \citep{lu2022} is in Appendix~\ref{app:related}.
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Prior against residual loss at $N{=}200$.} Relative $L_2$ error, mean
+    $\pm$ sample standard deviation over five seeds; bold marks the row minimum.
+    $\varepsilon_{\mathrm{prior}}$ is the error of $u_p$ alone and \armpi\ is at its oracle weight;
+    ``--'' marks the rows admitting no matched residual loss. All budgets:
+    Table~\ref{tab:app-e1-raw}.}
+    \label{tab:exp1_main}
+    \scriptsize
+    \setlength{\tabcolsep}{11pt}
+    \renewcommand{\arraystretch}{0.7}
+    \begin{tabular}{llcccc}
+        \toprule
+        Benchmark & Model & $\varepsilon_{\mathrm{prior}}$ & \armraw & \armpi & \armprior \\
+        \midrule
+        \multicolumn{6}{@{}l}{\emph{a differentiable residual of $\mathcal{F}_0$ is available}}\\[2pt]
+        1D nonlinear reaction & DeepONet & 0.0029 & 0.0246\,{\scriptsize$\pm$0.0029} & 0.0230\,{\scriptsize$\pm$0.0024} & \textbf{0.0004}\,{\scriptsize$\pm$0.0001} \\
+        1D nonlinear reaction & FNO & 0.0029 & 0.0064\,{\scriptsize$\pm$0.0007} & 0.0051\,{\scriptsize$\pm$0.0004} & \textbf{0.0006}\,{\scriptsize$\pm$0.0001} \\
+        Darcy \citep{li2020fourier} & DeepONet & 0.2511 & 0.0989\,{\scriptsize$\pm$0.0040} & 0.0950\,{\scriptsize$\pm$0.0020} & \textbf{0.0716}\,{\scriptsize$\pm$0.0007} \\
+        Darcy \citep{li2020fourier} & FNO & 0.2511 & 0.0185\,{\scriptsize$\pm$0.0010} & \textbf{0.0184}\,{\scriptsize$\pm$0.0010} & 0.0193\,{\scriptsize$\pm$0.0011} \\
+        \midrule
+        \multicolumn{6}{@{}l}{\emph{no matched residual loss can be formed}}\\[2pt]
+        Pipe \citep{li2023fourier} & DeepONet & 0.1070 & 0.1009\,{\scriptsize$\pm$0.0058} & -- & \textbf{0.0434}\,{\scriptsize$\pm$0.0025} \\
+        Pipe \citep{li2023fourier} & FNO & 0.1070 & \textbf{0.0169}\,{\scriptsize$\pm$0.0015} & -- & 0.0196\,{\scriptsize$\pm$0.0019} \\
+        Pipe-GRF & FNO & 0.0842 & 0.0484\,{\scriptsize$\pm$0.0029} & -- & \textbf{0.0385}\,{\scriptsize$\pm$0.0015} \\
+        \bottomrule
+    \end{tabular}
+    \vspace{-5mm}
+\end{table}
+
+
+\section{Results}
+\label{sec:results}
+\vspace{-3mm}
+Of the eighteen benchmarks, eleven admit a differentiable residual in
+$\mathcal{F}_0$ and carry the loss-versus-prior comparison; six expose a reusable
+representation $\Phi_{\mathcal{F}_0}$ and carry the structural-injection
+experiments. Table~\ref{tab:bench_overview} in Appendix~\ref{app:exp1_details}
+lists all eighteen with the formulations each admits.
+
+ \subsection{Experiment 1: Equation-derived priors vs. physics losses}
+\label{sec:exp1}
+
+We ask whether the governing PDE is a stronger inductive bias as an equation-derived
+prior than as an explicit residual loss. Three formulations carry that comparison:
+a raw neural operator (\armraw), a physics-informed one that adds the residual to the
+objective (\armpi), and the equation-derived prior (\armprior), matched in every
+respect but where the physics enters. Three further formulations test the representation:
+structural injection (\armstruct), Eq.~\ref{eq:structural_injection}, and two controls matched
+to it in width and parameter count: a random basis (\armrand) and one built from the training
+residuals by POD (\armpod).
+More details are in Appendix~\ref{app:exp1_details}.
+
+
+Table~\ref{tab:exp1_main} shows the prior improving on the raw model far more than the
+physics-informed loss does, and shows where it does not. On 1D nonlinear reaction, where the
+construction resolves the field almost completely ($\varepsilon_{\mathrm{prior}}=0.0029$), the
+prior is $56\times$ below the oracle-weighted loss under DeepONet and $8.4\times$ below it under
+\textsc{FNO}; the loss itself moves the raw error by $7\%$ and $20\%$.
+
+How far it improves depends on how much it resolves, and on how much the backbone already
+resolves without it. Over the thirteen benchmark--architecture pairs that admit both formulations and are not solved
+outright by a data-only linear baseline, across all budgets, the geometric-mean
+\armpi/\armprior\ ratio is $2.74\times$ and the prior is the more accurate of the two in $39$ of
+the $58$ pair--budget cells. Split at the median of $\varepsilon_{\mathrm{prior}}$, the error of
+$u_p$ alone, the six pairs below $0.196$ give $6.65\times$ with the prior ahead in $27$ of $31$
+cells, while on the seven above the two formulations are indistinguishable in aggregate
+($0.99\times$, $12$ of $27$; Table~\ref{tab:strata}). The excluded three --- 1D heat, 1D
+convection and battery --- have an input-to-output map that is exactly linear, and a $z$-scored
+ridge regression on the inputs reaches $0.002$ or less at $N{=}200$ on all three, below every
+neural formulation we run; they are reported in Table~\ref{tab:app-e1-raw} but carry no claim.
+The oracle returns the best $\lambda$ on the grid, so these are conservative estimates of the
+margin under practical $\lambda$-selection rules; Appendix~\ref{app:oracle} evaluates three fair
+selection rules, none of which reduces it.
+
+At $N{=}200$ the four pairs where the loss leads are all Darcy under the effective-medium construction
+(1D Darcy under both backbones, 2D Darcy and Darcy \citep{li2020fourier} under \textsc{FNO}), and
+the margins are $0.0007$ to $0.0062$ in absolute error, resolved on three of the four
+($p\le0.021$) and unresolved on Darcy under \textsc{FNO} ($p=0.13$). The lower block of
+Table~\ref{tab:exp1_main} shows the same pattern without a loss to compare against: on Pipe the
+prior is $2.3\times$ below \armraw\ under DeepONet, which cannot resolve the field from $200$
+labels alone, and slightly above it under \textsc{FNO}, which can. The equation is generally more
+effective as a prior than as a training constraint; it does not follow that physics always helps
+(Appendix~\ref{app:prior-value}).
+
+\begin{table}[t]
+    \centering
+    \caption{\textbf{Structural injection against capacity-matched controls at $N{=}200$.}
+    Relative $L_2$ error, DeepONet backbone, mean $\pm$ sample standard deviation over five seeds;
+    bold marks the row minimum. \armrand\ and \armpod\ replace $\Phi_{\mathcal{F}_0}$ by a random and a POD basis at the same width and parameter count. All six benchmarks that expose $\Phi_{\mathcal{F}_0}$ are listed; Figure~\ref{fig:exp2_nsweep} gives the same comparison against the training budget.}
+    \label{tab:exp1_structural}
+    \scriptsize
+    \setlength{\tabcolsep}{10pt}
+    \renewcommand{\arraystretch}{0.7}
+    \begin{tabular}{lccccc}
+        \toprule
+        Benchmark & $u_p$ alone & \armprior & \armstruct & \armrand & \armpod \\
+        \midrule
+        2D Poisson, $N=200$ & 0.1827 & 0.0161\,{\scriptsize$\pm$0.0006} & \textbf{0.0025}\,{\scriptsize$\pm$0.0001} & 0.0179\,{\scriptsize$\pm$0.0007} & 0.0134\,{\scriptsize$\pm$0.0004} \\
+        3D layered, $N=200$ & 0.1751 & 0.2377\,{\scriptsize$\pm$0.0096} & \textbf{0.0347}\,{\scriptsize$\pm$0.0023} & 0.2633\,{\scriptsize$\pm$0.0090} & 0.2253\,{\scriptsize$\pm$0.0179} \\
+        Annulus, $N=200$ & 0.6649 & 0.5195\,{\scriptsize$\pm$0.0204} & \textbf{0.0251}\,{\scriptsize$\pm$0.0013} & 0.5568\,{\scriptsize$\pm$0.0325} & 0.5738\,{\scriptsize$\pm$0.0113} \\
+        Elasticity, $N=200$ & 0.3214 & 0.1098\,{\scriptsize$\pm$0.0018} & \textbf{0.0626}\,{\scriptsize$\pm$0.0016} & 0.1352\,{\scriptsize$\pm$0.0035} & 0.2754\,{\scriptsize$\pm$0.0349} \\
+        Pipe, $N=200$ & 0.1070 & 0.0434\,{\scriptsize$\pm$0.0025} & \textbf{0.0244}\,{\scriptsize$\pm$0.0019} & 0.0439\,{\scriptsize$\pm$0.0025} & 0.0254\,{\scriptsize$\pm$0.0007} \\
+        Optical, $N=200$ & 0.2941 & \textbf{0.1229}\,{\scriptsize$\pm$0.0087} & 0.1258\,{\scriptsize$\pm$0.0059} & 0.1369\,{\scriptsize$\pm$0.0020} & 0.1252\,{\scriptsize$\pm$0.0077} \\
+        \bottomrule
+    \end{tabular}
+    \vspace{-5mm}
+\end{table}
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.98\linewidth]{fig_nsweep_all6.pdf}
+    \vspace{-3mm}
+    \caption{
+    \textbf{Error against training budget.} Relative $L_2$ error against $N$, both axes
+    logarithmic, DeepONet backbone, for the six benchmarks that expose $\Phi_{\mathcal{F}_0}$.
+    Bands are $\pm 1$ sample standard deviation over five seeds; the dotted line is
+    $\varepsilon_{\mathrm{prior}}$, which does not depend on $N$. \armpi\ is at its oracle weight
+    and only where a residual of $\mathcal{F}_0$ exists, so it is absent on elasticity, Pipe and
+    optical, and stops at $N{=}200$ on 3D layered and annulus and at $N{=}500$ on 2D Poisson. \armstruct\ is below the dotted line at every budget except
+    elasticity at $N{=}10$. Where the residual keeps its own structure the other formulations stay
+    near that line as $N$ grows (3D layered, annulus, and \armraw\ on 3D layered moves away from
+    it); where it is low-dimensional they reach it as well, and on Pipe \armpod\ passes
+    \armstruct\ at $N\ge500$.
+    }
+    \label{fig:exp2_nsweep}
+            \vspace{-5mm}
+\end{figure}
+
+Table~\ref{tab:exp1_structural} shows structural injection improving further where the
+residual has algebraic structure to expose. The separation that matters is
+\armrand/\armstruct, since only that pair is capacity-matched: $7.18\times$ on 2D
+Poisson, $7.58\times$ on 3D layered, $22.21\times$ on annulus, $2.16\times$ on
+elasticity, $1.80\times$ on Pipe and $1.09\times$ on optical. The random basis of matched
+width is worse than the prior it was added to on five of the six ($p\le0.02$) and matches
+it on Pipe ($0.0439$ against $0.0434$, $p=0.40$), so the gain is not the extra capacity:
+it is the basis the equation prescribes. \armpod, which draws the same width from the
+training residuals themselves, does not close the gap on the four benchmarks whose
+residual carries its own structure, and on annulus and elasticity it is worse than the
+random basis. Pipe and optical are the exceptions, and for one reason: where the residual
+is low-dimensional, a basis fitted to the training residuals reaches the same place. On
+Pipe the shape family is nine-dimensional, and \armpod\ is unresolved against \armstruct\
+at $N{=}200$ ($0.0254$ against $0.0244$, $p=0.21$) and ahead of it at larger budgets
+($0.0148$ against $0.0160$ at $N{=}500$, $p=0.02$; $0.0108$ against $0.0125$ at
+$N{=}1000$, $p=0.005$); on optical no column separates at all ($p\ge0.34$ for every pair among
+\armstruct, \armprior\ and \armpod). 3D layered is the sharpest case: there the generic corrector of
+Eq.~\ref{eq:generic_corrector} leaves the error \emph{above} $u_p$ alone ($0.2377$ against
+$0.1751$), while the same corrector with the equation-derived basis reaches $0.0347$.
+
+The prior is also the cheaper formulation: constructing it for every test instance costs a median of $16\%$ of one \armprior\ training run, whereas one \armpi\ run costs $4.4$--$49.5\times$ one \armprior\ run (Appendix~\ref{app:details}).
+
+\vspace{-4mm}
+\subsection{Experiment 2: Structural injection under varying data budgets}
+\label{sec:exp2}
+
+A single budget cannot separate a model that is genuinely more accurate from one that
+merely starts from a better guess and stops improving once data arrives. We sweep
+$N \in \{10, 25, 50, 100, 200, 500, 1000\}$ with everything else fixed as in
+Section~\ref{sec:exp1}, five seeds per point; optical stops at $N{=}500$ and \armpi\ at
+$N{=}200$.
+
+
+
+Figure~\ref{fig:exp2_nsweep} shows the formulations differing not only in error at a fixed budget but in what additional labels buy. \armraw, \armpi, \armprior, \armrand\ and \armpod\ all settle near the error of $u_p$ alone and stay there, while \armstruct\ continues below it. On 3D layered the effect is visible in the sign: \armraw\ gets \emph{worse} as the
+budget grows ($1.14$ at $N{=}10$ to $1.64$ at $N{=}1000$), \armprior\ drifts up as well ($0.191$ to $0.264$), and \armstruct\ falls from $0.136$ to $0.030$. 
+The error above one for RAW and PI reflects the difficulty of learning moving, geometry-dependent layer interfaces from scarce labels with a generic DeepONet; the equation-derived basis instead supplies this piecewise structure explicitly.
+On annulus \armstruct\ at $N{=}10$ ($0.056$) is already below every other formulation at $N{=}1000$ ($0.394$ to $0.503$), a hundredfold difference in budget. The prior supplies a good starting point; it does not make
+additional data effective.
+
+Two qualifications. Structural injection is not uniformly beneficial at the smallest budgets:
+on elasticity it does not overtake \armprior\ until $N{=}100$, a property of how much of the basis the
+budget can estimate rather than an optimization accident. And the
+benefit saturates once the residual is captured: on 2D Poisson \armstruct\ reaches its own
+floor by $N{=}25$ and is flat thereafter (Figure~\ref{fig:exp2_nsweep}), so the claim
+concerns the regime in which data is scarce relative to the complexity of the residual.
+
+We additionally test the benchmarks under a distribution shift on the geometry or the input function. Structural injection remains effective under this shift on five of the six, although this OOD setting does not support a general robustness claim (Appendix~\ref{app:ood}).
+
+\subsection{Case study: complex geometry without a residual}
+\label{sec:airfrans}
+
+\begin{figure}[t]\centering
+  \includegraphics[width=1\linewidth]{AirfRANS.pdf}
+              \vspace{-3mm}
+  \caption{\textbf{What the rank-two prior removes.} Three held-out cases with
+  $U_\infty\ge75\,\mathrm{m\,s^{-1}}$, at the smallest, median and largest incidence among them.
+  Top: the reference pressure $p^\star$. Middle: the prior $u_p$ of Eq.~\ref{eq:airfrans-prior},
+  fitted on the $800$-case training pool. Bottom: the residual $p^\star - u_p$ left for the
+  corrector. All panels share one colour scale.}
+  \label{fig:airfrans-prior}
+              \vspace{-5mm}
+\end{figure}
+
+\begin{table}[t]\centering
+\caption{\textbf{\textsc{AirfRANS} pressure field, DeepONet backbone.} Relative $L_2$
+error, mean $\pm$ sample standard deviation over five seeds; bold marks the column
+minimum, and \emph{ratio} is \armraw/\armprior. The prior is refitted on every training
+draw, so $\varepsilon_{\mathrm{prior}}$ moves with $N$. Paired $t$-tests over the shared
+seeds put \textsc{Cp-Prior} below every other row at every budget ($p<0.05$) and
+\armprior\ below \armraw\ ($p<0.03$); \armprior\ and \textsc{Cp-net} are resolved only at
+$N{=}50$ ($p=0.03$) and $N{=}500$ ($p=0.002$).}
+\label{tab:airfrans}
+    \scriptsize
+    \setlength{\tabcolsep}{5pt}
+    \renewcommand{\arraystretch}{0.7}
+\begin{tabular}{l cccccc}
+\toprule
+& \multicolumn{6}{c}{training samples $N$} \\\cmidrule(l){2-7}
+model & 10 & 25 & 50 & 100 & 200 & 500 \\
+\midrule
+\armraw & 1.3847\,{\scriptsize$\pm$0.7148} & 0.4174\,{\scriptsize$\pm$0.0511} & 0.2372\,{\scriptsize$\pm$0.0072} & 0.1473\,{\scriptsize$\pm$0.0140} & 0.0854\,{\scriptsize$\pm$0.0057} & 0.0463\,{\scriptsize$\pm$0.0034} \\
+\textsc{Cp-net} & 1.0668\,{\scriptsize$\pm$0.6918} & 0.3080\,{\scriptsize$\pm$0.1069} & 0.1455\,{\scriptsize$\pm$0.0206} & 0.0782\,{\scriptsize$\pm$0.0097} & 0.0484\,{\scriptsize$\pm$0.0029} & 0.0250\,{\scriptsize$\pm$0.0014} \\
+\midrule
+$\varepsilon_{\mathrm{prior}}$ & 0.4166 & 0.3788 & 0.3712 & 0.3529 & 0.3549 & 0.3545 \\
+\armprior & 0.3958\,{\scriptsize$\pm$0.0766} & 0.2005\,{\scriptsize$\pm$0.0246} & 0.1269\,{\scriptsize$\pm$0.0129} & 0.0801\,{\scriptsize$\pm$0.0095} & 0.0507\,{\scriptsize$\pm$0.0032} & 0.0299\,{\scriptsize$\pm$0.0007} \\
+\emph{ratio} & 3.50$\times$ & 2.08$\times$ & 1.87$\times$ & 1.84$\times$ & 1.68$\times$ & 1.55$\times$ \\
+\midrule
+\textsc{Cp-Prior} & \textbf{0.3092}\,{\scriptsize$\pm$0.1239} & \textbf{0.1482}\,{\scriptsize$\pm$0.0385} & \textbf{0.0836}\,{\scriptsize$\pm$0.0128} & \textbf{0.0509}\,{\scriptsize$\pm$0.0071} & \textbf{0.0292}\,{\scriptsize$\pm$0.0016} & \textbf{0.0165}\,{\scriptsize$\pm$0.0010} \\
+\bottomrule
+\end{tabular}
+            \vspace{-5mm}
+\end{table}
+
+\textsc{AirfRANS} \citep{bonnet2022airfrans} is the stress test for everything above.
+Of the four benchmarks taken from published datasets it is the only one on which no
+differentiable residual can be written down, and the one on which the equation yields
+the least: not a field but a single instance-side factor, the weakest of the three
+outputs of Eq.~\ref{eq:solve_outputs}. It is where the two ways of using an equation
+come apart by construction. Each instance is a steady incompressible RANS
+solution around an airfoil: $a=(U_\infty,\alpha,s)$ gives inlet speed, incidence and
+$32$ surface samples, and the target $u^\star \equiv p^\star$ is the pressure at
+$n_x = 2219$ points of a fixed $60\times40$ Cartesian grid that lie outside every airfoil in the dataset, referenced against
+finite-volume solutions on body-fitted meshes $\mathcal{M}(a)$.
+
+A physics-informed formulation would minimize
+\begin{equation}
+  \mathcal{L}_{\mathrm{PI}}(\theta) =
+  \sum_{i,j} \bigl\| \mathcal{N}^{h}_{a_i}[v_\theta, p_\theta, \nu_{t,\theta}](x_j) \bigr\|^2,
+  \quad
+  \mathcal{N}_a[v,p,\nu_t] = (v\!\cdot\!\nabla)v + \nabla p
+  - \nabla\!\cdot\!\bigl((\nu + \nu_t)\nabla v\bigr).
+  \label{eq:pi-loss}
+\end{equation}
+Here \(v\), \(p\), \(\nu\) and \(\nu_t\) denote velocity, pressure, kinematic viscosity and eddy viscosity, and \(v_\theta, p_\theta, \nu_{t,\theta}\) their predictions. Three obstructions meet here. The discrete operator $\mathcal{N}^h_a$ lives on
+$\mathcal{M}(a)$ while the $x_j$ lie on an unaligned grid, so a stencil near the body
+reads points where the solution is undefined; the domain is instance-dependent, so no
+single residual operator is shared across the training set; and our predictor outputs
+pressure alone, so neither \(v\) nor \(\nu_t\) is available to it; even with the true velocity, dropping \(\nu_t\) leaves
+\begin{equation}
+  \mathcal{N}_a[v^\star, p^\star, 0] = \nabla\!\cdot\!(\nu_t^\star \nabla v^\star) \neq 0
+  \label{eq:closure}
+\end{equation}
+at the \emph{true} solution. None of this makes a residual loss impossible in
+principle: the dataset carries velocity and eddy viscosity too, and a formulation
+predicting them on a body-fitted discretization could assemble one. The narrower claim
+is the one we rely on: under the output representation and discretization used here,
+no directly matched residual formulation is available.
+
+What survives is a scaling law rather than a stencil. Non-dimensionalizing the steady
+incompressible momentum equation factors the pressure exactly into a dynamic-pressure
+scale and a dimensionless coefficient,
+\begin{equation}
+  p^\star(x;\, U_\infty, \alpha, s) = q(a)\, C_p(x;\, \alpha, s, Re),
+  \qquad
+  q(a) = \tfrac12 U_\infty^{2},
+  \qquad
+  Re = \frac{U_\infty \ell}{\nu},
+  \label{eq:cp}
+\end{equation}
+in which \(\ell\) is the chord length and the flow condition reaches $C_p$ only through the Reynolds number, so at
+fixed $Re$ the pressure is exactly quadratic in the inlet speed. \textsc{AirfRANS}
+holds the viscosity fixed and varies the speed, so $Re$ ranges over
+$2.0$--$6.0\times10^{6}$ and dropping its argument leaves an approximation rather than
+an identity,
+\begin{equation}
+  p^\star(x;\, \kappa U_\infty, \alpha, s) \;\approx\; \kappa^{2}\, p^\star(x;\, U_\infty, \alpha, s).
+  \label{eq:invariance}
+\end{equation}
+Its defect is confined to where molecular viscosity is not negligible against
+$\nu_t$ (Appendix~\ref{app:airfrans}). Linearizing the dependence on $\alpha$ at
+leading order then fixes a two-dimensional instance factor and a rank-two prior,
+\begin{equation}
+  \psi_{\mathcal{F}_0}(a) = q(a)\,(1,\ \alpha)^{\!\top},
+  \qquad
+  u_p(x_j; a) = c(x_j)^{\!\top}\psi_{\mathcal{F}_0}(a),
+  \label{eq:airfrans-prior}
+\end{equation}
+with \(c=(c_0,c_1)^{\!\top}\) the least-squares fit of Eq.~\ref{eq:prior_ls} on the same $N$ instances
+every formulation sees, determined for $N\ge2$. This is the indirect prior of
+Eq.~\ref{eq:solve_outputs}: the equation supplies the instance-side factor
+$\psi_{\mathcal{F}_0}$ in closed form and the labels only fill in the spatial
+profile.
+
+The corrector is generic, zero-initialized and matched to the raw baseline in capacity.
+What matters is what the prior removes: Eq.~\ref{eq:airfrans-prior} absorbs the
+leading-order dependence on the flow condition, leaving
+$r=q\bigl[C_p(x;\alpha,s,Re)-c_0(x)-c_1(x)\alpha\bigr]$, the shape-dependent departure
+from the rank-two field: camber and thickness, the suction peak, the wake. With
+$u_p$ fitted on the $800$-case training pool, $r$ is a median $3.8\times$ smaller in
+norm than $p^\star$ on the held-out cases and no longer tied to the flow condition: a
+regression on $(1,q,q\alpha)$ explains $R^{2}=0.020$ of its variance against $0.896$
+for $p^\star$ (Appendix~\ref{app:airfrans}). Figure~\ref{fig:airfrans-prior} shows the three fields on held-out cases.
+Smaller and uncoupled is what lets the same capacity buy a better fit.
+
+Table~\ref{tab:airfrans} shows the consequence. \armprior\ is below \armraw\ at every budget, by $3.50\times$ at $N{=}10$ and $1.55\times$ at $N{=}500$, and through $N{=}100$ its error is below that of \armraw\ at the next budget up, $0.0801$ at $N{=}100$ against $0.0854$ at $N{=}200$. The prior alone is capped, being rank two by construction, and data-derived peers fitted to the same instances overtake it between $N{=}50$ and $N{=}100$; with the corrector on top it stays ahead of them at every budget, by $2.65\times$ at $N{=}10$ and $2.88\times$ at $N{=}500$ (Appendix~\ref{app:airfrans}). Its spatial profile is fitted rather than solved, so \textsc{Cp-net} separates the scaling the equation supplies from the fit: normalizing by $q$ and learning the rest freely beats \armraw\ by $1.76\times$ at $N{=}200$, as much as the fitted anchor alone (\armprior, $1.68\times$; the two are not resolved, $p=0.33$). Neither substitutes for the other: \textsc{Cp-Prior} keeps the anchor and multiplies the corrector of Eq.~\ref{eq:generic_corrector} by $q(a)$, $\hat u_\theta=u_p+q(a)\,r_\theta$, filling the instance side of Eq.~\ref{eq:slots} up to that multiplier, and is the most accurate formulation at every budget, $1.66\times$ below \textsc{Cp-net} and $1.74\times$ below \armprior\ at $N{=}200$.
+
+\section{Discussion}
+\label{sec:limitations}
+\vspace{-3mm}
+
+\textbf{The constructions are equation specific by design.} We use established analytical structures such as spectral expansions, transfer matrices, effective medium reductions, complex potentials, and thin airfoil theory because these structures are already available from the corresponding governing equations. Our goal is not to automatically rediscover them from data, but to expose existing analytical knowledge before the network has to infer it from scarce labels.
+
+This gives equation knowledge a distinct role from data driven learning: the equation supplies structure that is already known, while learning supplies what remains unresolved. Although the resulting constructions are naturally specific to each equation family, the same principle applies across them. Automatically discovering such reductions is an interesting direction, but is separate from the question studied here.
+
+
+
+\textbf{The gain is conditional, and it decays.} The prior helps in proportion to what it resolves: on the Darcy family the effective-medium construction leaves $\varepsilon_{\mathrm{prior}}\approx0.19$--$0.25$ and \armpi\ is competitive with it, leading on four of the thirteen pairs. Structural injection adds two conditions: the unmodeled term must be dominated by its linear part (Appendix~\ref{app:scope}), and the budget must suffice to estimate the basis, which on elasticity means $N\ge100$ before \armstruct\ overtakes \armprior. Nor is the advantage fixed as labels accumulate: on \textsc{AirfRANS} the prior alone is overtaken by data-derived peers between $N=50$ and $N=100$, and the margin of \armprior\ over \armraw\ falls from $3.50\times$ at $N=10$ to $1.55\times$ at $N=500$, where \textsc{Cp-net} overtakes it. The claim concerns the regime in which data is scarce relative to the complexity of the residual, and not beyond it.
+
+\textbf{One benchmark is not label-free.} The \textsc{AirfRANS} prior fits two
+coefficients per query point and rests on a scaling law exact only at fixed Reynolds
+number, which this dataset does not hold. Section~\ref{sec:airfrans} separates the scaling the
+equation supplies from the fitted profile, but the benchmark is not
+comparable to the seventeen label-free constructions and we do not pool it with them.
+
+\textbf{The benchmarks are small.} 3D Darcy supplies $32768$ query points and
+\textsc{AirfRANS} $2219$, while the benchmarks carrying the structural-injection
+experiments have between $512$ and $8192$; none approaches the resolution of an
+industrial solve. \textsc{AirfRANS}, the benchmark closest to an engineering workflow, is a steady
+two-dimensional field, and five seeds per cell gives limited power
+for any single comparison. Nothing here settles the three-dimensional unsteady case at
+industrial resolution.
+
+\section{Conclusion}
+\label{sec:conclusion}
+\vspace{-3mm}
+Where equation knowledge enters neural operator learning matters: as a loss, as a prior that removes the variation the equation already determines, or as a representation for residual learning. Across eleven residual-loss benchmarks, the prior remains more accurate in aggregate, while \textsc{AirfRANS} shows the information remains useful even without a matched residual formulation. When reusable residual structure is exposed, explicit injection can further improve learning; on annulus, the equation-derived basis is $22.2\times$ more accurate than a matched random basis of the same width, and on 2D Poisson $7.2\times$. These results support a simple principle: extract what the equation determines before learning, and use data for the remainder.
+
+
+
+\bibliography{iclr2027_conference}
+\bibliographystyle{iclr2027_conference}
+
+\newpage
+\appendix
+
+\section{Two Exact Identities Behind the First Two Slots}
+\label{app:identities}
+
+This appendix proves Lemma~\ref{lem:residual-identity} and
+Proposition~\ref{prop:pi-bias} of Section~\ref{sec:framework}. Both are exact algebraic
+consequences of Eq.~\ref{eq:model-error}, and neither assumes $\|\Delta\|$ small. Both are
+stated for a linear $L_0$. The lemma further assumes that $\Delta$ acts in the interior and
+that $u$ and $u_p$ share the boundary condition, which holds on 2D Poisson, 1D heat, battery
+and the Darcy benchmarks; on 3D layered and annulus $\Delta$ acts on interfaces, on
+elasticity the boundary itself differs, and Section~\ref{sec:framework} states what replaces the
+lemma there. For the nonlinear benchmarks (1D Burgers, 1D nonlinear reaction) and
+\textsc{AirfRANS} both are a linearization rather than an identity, and we do not apply them
+there.
+
+\begin{proof}[Proof of Lemma~\ref{lem:residual-identity}]
+Write $\mathcal{F}(v)=L_0v-f+\Delta(v)$, with $L_0$ boundedly invertible on the space of
+fields satisfying the homogeneous form of the shared boundary operator $\mathcal{B}$.
+Subtracting $L_0u_p=f$ from $L_0u+\Delta(u)=f$ gives $L_0(u-u_p)=-\Delta(u)$. Both $u$ and
+$u_p$ satisfy $\mathcal{B}$, so $r$ lies where $L_0$ is invertible; apply $L_0^{-1}$.
+\end{proof}
+
+\noindent
+If $L_0$ is self-adjoint with eigenpairs $(\phi_m,\lambda_m)$ and
+$\Delta(u)=\sum_m c_m\phi_m$, then $r=-\sum_m(c_m/\lambda_m)\phi_m$, so when $L_0$ admits a
+useful eigenbasis the same equation-derived basis provides a natural coordinate system for
+the residual. We do not claim a general decay rate for $c_m$ across benchmarks; any observed
+decay is treated as an empirical property of the corresponding benchmark construction rather
+than a universal law.
+
+Section~\ref{sec:framework} places the residual loss in the objective slot of
+Eq.~\ref{eq:slots}. For a linear $L_0$ the penalized objective is quadratic in $\hat u$, with
+Hessian $2M$, $M=I+\lambda L_0^{\!\top}L_0$, and minimizer $v_\lambda$, so completing the
+square gives
+\begin{equation}
+  \|\hat u-u\|^{2}+\lambda\|L_0\hat u-f\|^{2}
+  =
+  \|\hat u-v_\lambda\|_{M}^{2}+c,
+  \label{eq:metric-shift}
+\end{equation}
+with $c$ independent of $\hat u$. The loss therefore fits $\hat u$ to $v_\lambda$ in the
+metric $M$: it reweights the error, and it moves the target unless $\Delta(u)=0$, where
+$v_\lambda=u$.
+
+\begin{proof}[Proof of Proposition~\ref{prop:pi-bias}]
+Stationarity gives $\left(I+\lambda L_0^{\top}L_0\right)v=u+\lambda L_0^{\top}f$.
+Substituting $f=L_0u+\Delta(u)$, which is Eq.~\ref{eq:model-error} at the truth, makes the right side
+$\left(I+\lambda L_0^{\top}L_0\right)u+\lambda L_0^{\top}\Delta(u)$; multiply by
+$\left(I+\lambda L_0^{\top}L_0\right)^{-1}$.
+\end{proof}
+
+\noindent
+The displacement from $u$ depends on $\lambda$ and $\Delta(u)$ alone, vanishes when
+$\Delta(u)=0$, and carries no dependence on the sample size $N$. This is a statement about
+the exact population minimiser under unlimited optimization: a finite-sample,
+finite-capacity, finite-step estimator need not reach $v_\lambda$, so the claim is that the
+penalty's \emph{target} does not sharpen as labels accumulate, not that every trained
+instance of it will exhibit an unchanging gap.
+
+\section{Equation-Derived Constructions}
+\label{app:priors}
+
+This appendix specifies the equation-derived constructions used throughout the
+experiments. The main text represents all such constructions abstractly through
+$u_p$ and $\Phi_{\mathcal F_0}$; here we give the concrete forms used for each
+problem class. Table~\ref{tab:constructions} names the construction each benchmark
+uses and what, if anything, it exposes beyond a field; the subsections that follow
+derive them.
+
+\begin{table}[H]
+\centering
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{0.7}
+\caption{\textbf{Prior construction for every benchmark.} Every construction is solved
+independently of the solution labels, \textsc{AirfRANS} excepted as noted. ``None'' means the solve
+returns a field and nothing reusable beyond it.}
+\label{tab:constructions}
+\vspace{1mm}
+\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+Construction & Benchmarks & Prior is & Structure exposed \\
+\midrule
+Direct solve of $\mathcal{F}_0$ & 1D heat, battery,            & a numerical solution & none \\
+                                & nonlinear reaction, Burgers  &                      &     \\
+Reduced equation      & 1D convection            & forward integration of $Vu'=f$ & none \\
+Heat equation         & Burgers \citep{li2020fourier} & $u_t=\nu u_{xx}$ at $t=1$, nonlinearity dropped & none \\
+Effective medium      & 1D Darcy                 & harmonic-mean coefficient      & none \\
+                      & 2D Darcy                 & geometric-mean coefficient     & none \\
+Homogenized mean      & 3D Darcy                 & homogenized-coefficient solve  & none \\
+                      & Darcy \citep{li2020fourier} & geometric-mean coefficient  & none \\
+Stokes solve          & Pipe \citep{li2023fourier}, & steady Stokes flow in the same & Green response \\
+                      & Pipe-GRF                 & geometry, inertia dropped      & of $\mathcal{F}_0$ \\
+Spectral expansion    & 2D Poisson               & eigenfunction sum              & modal basis \\
+Transfer matrix       & 3D layered (five)        & layerwise closed form          & modal basis, \\
+                      &                          &                                & interfaces $b_j(a)$ \\
+Characteristic matrix & optical thin film        & $2\times2$ product per wavelength & sensitivity directions \\
+Polar transfer matrix & annulus                  & mode-wise closed form          & radial modes \\
+Complex potential     & elasticity               & conformal-map solution         & Laurent modes \\
+Thin airfoil          & AirfRANS                 & $q(c_0+c_1\alpha)$, two fitted & none \\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+\subsection{Spectral Representation}
+\label{app:spectral-representation}
+
+For problems on separable domains, the linear operator \(L_0\) of \(\mathcal{F}_0(u;a)=L_0u-f\) admits orthonormal eigenpairs
+$(\phi_m,\lambda_m)$ satisfying
+\[
+L_0\phi_m=\lambda_m\phi_m.
+\]
+Expanding the solution in this basis gives the equation-derived prior
+\begin{equation}
+u_p(x;a)
+=
+\sum_{m\leq m_{\max}}
+\frac{
+\langle f(\cdot\,;a),\phi_m\rangle
+}{
+\lambda_m
+}
+\phi_m(x).
+\label{eq:app-spectral-prior}
+\end{equation}
+The same eigenfunctions, multiplied by the source coefficients $\langle f,\phi_m\rangle$, form the structured branch; Appendix~\ref{app:phi-factorization} gives this factorization as form~(a).
+
+\subsection{Layered Transfer Construction}
+\label{app:layered-representation}
+
+For layered problems, the solve separates the transverse coordinate \(y\) from the
+layer-normal coordinate \(z\), writing the query coordinate as \(x=(y,z)\). Let \(\{\phi_m(y)\}\) denote the transverse modes and let
+$w_i$ denote the layer widths. The interface locations are
+\begin{equation}
+b_j(a)=\sum_{i\leq j}w_i.
+\label{eq:app-interface-location}
+\end{equation}
+The transfer construction solves each transverse mode in closed form inside every layer and matches the layers at these interfaces; the prior imposes continuity of the field and of the flux there, and the reference adds an interface thermal resistance. The transverse modes and the layerwise $z$-solutions form the separable spatial factor of form~(b) in Appendix~\ref{app:phi-factorization}.
+
+\subsection{Polar Transfer Construction}
+\label{app:polar-representation}
+
+For disk and annulus geometries, we use the corresponding polar form of the transfer
+construction. Cartesian layer solutions are replaced by radial solutions of the
+separated equation, while interface matching is retained in the same transfer
+form. This allows curved interfaces to be handled through the radial coordinate
+without changing the surrounding operator-learning procedure.
+
+Writing the query coordinate in polar form \(x=(\rho,\vartheta)\), each angular mode $m$ has the radial solutions $\rho^{m}$ and $\rho^{-m}$ in every region, matched at the interface radii; the prior imposes continuity of the field and of the flux there, and the reference adds an interface thermal resistance. The angular modes and these regionwise radial solutions form the separable spatial factor of form~(b) in Appendix~\ref{app:phi-factorization}.
+
+\subsection{Plane Elasticity}
+\label{app:elasticity-representation}
+
+For plane elasticity, the equation-derived solve is formulated through complex potentials, with the exterior of the hole mapped conformally onto the exterior of the unit disk. The prior solves the infinite plate under the prescribed hole traction; the reference solves a finite plate with a traction-free outer boundary under the same traction. The stress fields of the Laurent expansion through the conformal map form the spatial factor of form~(c) in Appendix~\ref{app:phi-factorization}, shared by every Fourier coefficient of the traction.
+
+\subsection{Optical Thin Films}
+\label{app:optical-representation}
+
+For the optical thin-film problem, the field at each wavelength is propagated through
+the multilayer stack by a product of $2\times2$ characteristic matrices, one per
+layer. The phase accumulated in layer $j$ is
+\begin{equation}
+\delta_j(\lambda)
+=
+\frac{2\pi n_j(\lambda)d_j}{\lambda},
+\label{eq:app-optical-phase}
+\end{equation}
+where \(\lambda\) is the wavelength and \(n_j\) and \(d_j\) are the refractive index and thickness of layer \(j\). The equation-derived prior uses constant refractive indices and neglects absorption,
+whereas the reference solution uses tabulated dispersive $n_j(\lambda)$ and
+extinction coefficients \(k_j(\lambda)\). The resulting residual therefore reflects material dispersion and
+absorption rather than an omitted differential term.
+
+The characteristic-matrix solve also exposes sensitivity directions: the derivatives of the prior reflectance with respect to the composition in each depth bin, which form the spatial factor of form~(d) in Appendix~\ref{app:phi-factorization}.
+
+\subsection{Stokes Construction for Pipe Flow}
+\label{app:stokes-representation}
+
+For the pipe benchmarks the reference equation is the steady incompressible
+Navier--Stokes system at $\nu=5\times10^{-3}$ in a curved channel of unit vertical width,
+and $\mathcal{F}_0$ drops the inertial term, leaving steady Stokes flow in the same
+geometry under the same boundary conditions. Both are solved by the same
+stream-function--vorticity discretization, so the prior and the reference differ by the
+convective term alone: the missing physics is inertia, at $\mathrm{Re}\approx33$.
+
+Writing $y_b(x)$ for the lower wall, the solve is carried out in the computational
+coordinates $\xi=x$, $\eta=y-y_b(x)\in[0,1]$, in which every instance shares one grid. With
+$s=y_b'$ the Laplacian becomes
+\begin{equation}
+\Delta_{a_g} f
+=
+f_{\xi\xi}-2s\,f_{\xi\eta}+(1+s^2)f_{\eta\eta}-s'f_{\eta},
+\label{eq:app-stokes-metric}
+\end{equation}
+and the prior solves
+\begin{equation}
+\Delta_{a_g}\psi+\omega=0,
+\qquad
+\Delta_{a_g}\omega=0,
+\qquad
+u_p=\partial_\eta\psi,
+\label{eq:app-stokes-system}
+\end{equation}
+where the reference instead carries
+$\Delta_{a_g}\omega=\nu^{-1}\bigl[u\,\omega_\xi+(v-su)\,\omega_\eta\bigr]$ on the right.
+The boundary conditions are no-slip walls, $\psi=0$ and $\psi=\tfrac16$ with Thom's
+condition $\omega_w=-(1+s^2)\,2(\psi_1-\psi_w)/\Delta\eta^2$; a Poiseuille inlet,
+$\psi=\eta^2/2-\eta^3/3$ and $\omega=-(1-2\eta)$; and second-order extrapolation at the
+outlet. Both equations are discretized by centred differences on the same
+$129\times129$ grid, so the prior is one sparse solve per instance.
+
+\textbf{Verification.} On a straight channel the construction reproduces the Poiseuille
+profile to $\max|u_p-\eta(1-\eta)|=6\times10^{-5}$. Against the reference labels it gives
+$\varepsilon_{\mathrm{prior}}=0.107$ on Pipe and $0.084$ on Pipe-GRF. Lubrication theory is
+not used as a prior: in these coordinates $\eta(1-\eta)$ is a shape-independent constant
+field, so it coincides with the training mean field ($0.169$ against $0.160$), and a prior
+that ignores the geometry would not test the construction.
+
+\textbf{Green response.}
+Because the geometry enters the operator of Eq.~\ref{eq:app-stokes-system} rather than its
+data, the construction exposes a representation through the same operator rather than
+through a basis of the source. Let $\mathcal{S}_{a_g}$ denote the discrete Stokes operator
+just described, with its boundary rows made homogeneous, and let
+$\chi_k(\xi,\eta)=\sin(m\pi\xi)\sin(n\pi\eta)$, $\xi=x/10$, be a probe source entered in the
+interior rows of the vorticity equation only. The $k$-th column of
+$\Phi_{\mathcal F_0}$ is the horizontal velocity of the response,
+\begin{equation}
+S_k(x;a_g)
+=
+\sigma_k^{-1}\,\partial_\eta\psi_k,
+\qquad
+\Delta_{a_g}\psi_k+\omega_k=0,
+\quad
+\Delta_{a_g}\omega_k=\chi_k,
+\label{eq:app-stokes-green}
+\end{equation}
+with $m\le32$ and $n\le4$, giving $n_b=128$, and $\sigma_k$ the root-mean-square of the
+same column computed once on the straight channel $y_b\equiv0$, the fixed-reference scaling
+also used for elasticity. All $128$ columns share the coefficient matrix of the prior solve,
+so they cost one factorization per shape.
+
+The geometry input is $a_g=c(y_b)\in\mathbb{R}^{9}$, the pool principal-component
+coordinates of the lower wall divided by their pool standard deviations; the labels are not
+used. Nine coordinates are exact rather than truncated, since the benchmark's shape family
+is a ten-parameter spline and $y_b$ lies in a nine-dimensional affine subspace to $8\times
+10^{-9}$ of the leading singular value. There is no source factor: the instance is the
+geometry alone, so $F_k\equiv1$ and $\Phi_{\mathcal F_0}$ does not separate into an instance
+factor times a spatial one. This is form~(e) in Appendix~\ref{app:phi-factorization}, and it
+is why the matched controls on this benchmark replace the whole of $\Phi_{\mathcal F_0}$ by
+a sample-independent basis rather than replacing $S$ alone.
+
+The width is chosen by the same least-squares diagnostic used elsewhere: with
+$\beta^\star=\arg\min_\beta\|u-u_p-\Phi_{\mathcal F_0}\beta\|$ per sample, $n_b=128$ leaves
+$8.6\%$ of the residual outside the span on average (median $4.3\%$) and an oracle error of
+$0.011$, against $19.8\%$ and $0.023$ at $n_b=64$; fitting $a_g\mapsto\beta^\star$ by kernel
+ridge from $200$ training shapes reaches $0.023$ at $n_b=128$ and $0.030$ at $n_b=64$,
+against $0.107$ for $u_p$ alone and $0.107$ for a random basis of the same width.
+
+Pipe-GRF replaces the spline shape family by a Gaussian random field restricted to the
+statistics of the original family, and uses the same prior construction; no
+$\Phi_{\mathcal F_0}$ is built for it.
+
+\subsection{Effective-Medium Darcy Construction}
+\label{app:darcy-effective-medium}
+
+For Darcy problems with rough coefficients, the effective-medium construction
+replaces the spatially varying coefficient \(a(x)\), which is itself the instance input \(a\), by a constant effective value
+$a_0$ and solves the resulting constant-coefficient problem exactly. In one
+dimension, the effective coefficient is the harmonic mean,
+\begin{equation}
+a_0
+=
+\left\langle a^{-1}\right\rangle^{-1},
+\label{eq:app-darcy-harmonic}
+\end{equation}
+where \(\langle\cdot\rangle\) denotes the spatial average over \(\Omega\); this is the exact effective coefficient for the one-dimensional flux problem.
+For the two-dimensional isotropic case, we use the standard geometric-mean
+effective value
+\begin{equation}
+a_0
+=
+\exp\!\left(\left\langle\log a\right\rangle\right).
+\label{eq:app-darcy-geometric}
+\end{equation}
+These constructions provide an equation-derived prior $u_p$ but do not expose a
+reusable representation for the discarded coefficient variation. They therefore
+terminate at Level~2 and use a generic residual neural operator rather than structural
+injection.
+
+\textbf{Verification.}
+Where a closed form exists we check against it: the spectral prior reaches $2.4\times10^{-7}$ against
+$x(1-x)$ for Poisson and $1.9\times10^{-7}$ for Helmholtz, and is exact to machine precision for the
+heat equation with a single mode source and for two-dimensional Poisson with a product source. These
+verify the construction, not the accuracy of any prior as a predictor; how far $u_p$ is from the truth
+is a property of how incomplete $\mathcal{F}_0$ is and is reported in the main tables.
+
+\subsection{Factorization of the Structured Branch}
+\label{app:phi-factorization}
+
+This subsection gives, for each benchmark with a structured branch, the source factor $F$,
+the geometry input $a_g$ and the spatial factor $S$ of Eq.~\ref{eq:factorized}
+(Table~\ref{tab:fac-cases}). The spatial factor takes one of five forms.
+
+\begin{table}[H]
+\centering
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{0.9}
+\caption{\textbf{Factors of the structured branch.} Source factor $F$, geometry input $a_g$
+and spatial factor $S$ of Eq.~\ref{eq:factorized}, with the width $n_b$ of $\Phi_{\mathcal F_0}$.}
+\label{tab:fac-cases}
+\vspace{1mm}
+\footnotesize
+\begin{tabular}{@{}lllllll@{}}
+\toprule
+Form & Benchmark & $F_k(a_f)$ & $a_g$ & $S_k(x;a_g)$ & $\beta_\theta$ & $n_b$\\
+\midrule
+(a) fixed       & 2D Poisson & $\hat f_m$      & --              & $\phi_m(x)$                                  & constant            & 256\\
+(b) separable   & annulus    & $\hat g_m^{s}$  & $(r_j)_{j\le4}$ & $P_{ms}(\vartheta)\,Z_{ml}(\rho;a_g)$        & $\beta_\theta(a_g)$ & 216\\
+                & 3D layered & $c_m\eta_{k'}$  & $(w_j)_{j\le4}$ & $\phi_m(y)\,Z_{mj\sigma}(z;a_g)$             & $\beta_\theta(a_g)$ & 3072\\
+(c) shared      & elasticity & $\hat t_j$      & $(m_1,m_2,m_3)$ & $B_k(x;a_g)$                                 & $\beta_\theta(a_g)$ & 512\\
+(d) sensitivity & optical    & $1$             & $\theta(z)$     & $\partial R_p/\partial\theta_k(\lambda;a_g)$ & constant            & 64\\
+(e) response    & Pipe       & $1$             & $c(y_b)\in\mathbb{R}^{9}$ & $\sigma_k^{-1}\partial_\eta\psi_k(x;a_g)$ & $\beta_\theta(a_g)$ & 128\\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+\textbf{(a) Fixed basis.}
+When the domain does not vary, $a_g$ is empty and $S_k(x)$ is a fixed eigenbasis. For 2D
+Poisson on $[0,1]^2$, with $m=(p,q)$ and $1\le p,q\le 16$,
+\begin{equation}
+F_m(a_f)=\hat f_m,
+\qquad
+S_m(x)=\phi_m(x)=2\sin(p\pi x_1)\sin(q\pi x_2),
+\label{eq:fac-poisson}
+\end{equation}
+where $\hat f_m$ are the sine coefficients of the source. With the reference equation
+$-\nabla^2u+\mu u=f$ and the prior $-\nabla^2u_p=f$, the residual inside the span is
+$\sum_m \hat f_m\,[(\lambda_m+\mu)^{-1}-\lambda_m^{-1}]\,\phi_m(x)$ with
+$\lambda_m=(p^2+q^2)\pi^2$, so the target coefficients
+$\beta^\star_m=(\lambda_m+\mu)^{-1}-\lambda_m^{-1}$ do not depend on the instance.
+
+\textbf{(b) Separable basis.}
+When the domain is a product $x=(x_\parallel,x_\perp)$ whose geometry varies only across
+$x_\perp$, the index splits as $k=(m,l)$ and
+\begin{equation}
+S_{ml}(x;a_g)=P_m(x_\parallel)\,Z_{ml}(x_\perp;a_g),
+\label{eq:fac-separable}
+\end{equation}
+a fixed factor $P_m$ along the directions in which the geometry is invariant times a
+geometry-dependent factor $Z_{ml}$ across them.
+For the annulus, $x=(\rho,\vartheta)$, $a_f$ is the boundary data $g(\vartheta)$ with Fourier
+coefficients $\hat g_m^{s}$, and $a_g=(r_1,\ldots,r_4)$ are the interface radii, with $r_0=0$ and
+$r_5=1$. With $m\le 12$ and $s\in\{\cos,\sin\}$,
+\begin{equation}
+F_{msl}(a_f)=\hat g_m^{s},
+\qquad
+P_{ms}(\vartheta)=s(m\vartheta),
+\qquad
+Z_{ml}(\rho;a_g)\in\Bigl\{\bigl(\tfrac{\rho}{r_{j+1}}\bigr)^{m}\chi_j(\rho),\;
+\bigl(\tfrac{r_j}{\rho}\bigr)^{m}\chi_j(\rho)\Bigr\}_{j=0}^{4},
+\label{eq:fac-annulus}
+\end{equation}
+where $\chi_j$ is the indicator of $[r_j,r_{j+1})$ and region $j=0$ keeps only the first
+function, giving nine radial functions and $n_b=2\cdot12\cdot9=216$.
+For the 3D layered medium, $x=(y,z)$ with $y\in[0,1]^2$, the source is
+$f(y,z)=\sum_{m,k'}c_m\,\eta_{k'}\,\phi_m(y)\sin(k'\pi z)$, and $a_g=(w_1,\ldots,w_4)$ are the
+layer widths with interfaces $b_j$ of Eq.~\ref{eq:app-interface-location}. With
+$m=(p,q)$, $p,q\le 8$, $k'\le 4$, layer $j\in\{1,\ldots,4\}$ and $\sigma\in\{0,+,-\}$,
+\begin{equation}
+F_{mk'j\sigma}(a_f)=c_m\,\eta_{k'},
+\qquad
+P_m(y)=\phi_m(y),
+\qquad
+Z_{mj\sigma}(z;a_g)=\chi_j(z)\times
+\begin{cases}
+1, & \sigma=0,\\
+e^{-\gamma_m(z-b_{j-1})}, & \sigma=+,\\
+e^{-\gamma_m(b_j-z)}, & \sigma=-,
+\end{cases}
+\label{eq:fac-layered}
+\end{equation}
+where $\phi_m(y)=\sin(p\pi y_1)\sin(q\pi y_2)$, $\gamma_m=\pi\sqrt{p^2+q^2}$ and $\chi_j$ is the
+indicator of $[b_{j-1},b_j)$. $F$ does not depend on $(j,\sigma)$ and $Z$ does not depend on
+$k'$, giving $n_b=64\cdot4\cdot12=3072$.
+
+\textbf{(c) Shared fields.}
+When the equation supplies the fields but not the geometry-dependent map from $a_f$ to their
+coefficients, each field is paired with every coefficient of $a_f$. With $k=(k,j)$,
+\begin{equation}
+F_{kj}(a_f)=\hat t_j,
+\qquad
+S_{kj}(x;a_g)=B_k(x;a_g),
+\qquad
+\hat u_\theta(x;a)=u_p(x;a)+\sum_{k}\Bigl[\sum_{j}\beta_{\theta,kj}(a_g)\,\hat t_j\Bigr]B_k(x;a_g)+\epsilon_\theta(x;a).
+\label{eq:fac-shared}
+\end{equation}
+For plane elasticity, $x$ is a query point together with a stress component, $a_f$ is the hole
+traction $\tilde t(\vartheta)$ with Fourier coefficients $\hat t_j$ (two components, cosine and
+sine, modes $1$ and $2$; $8$ in total), $a_g=(m_1,m_2,m_3)$ are the conformal-map coefficients,
+and $B_k$ are the $64$ stress fields of the Laurent expansion through that map with orders
+$|k|\le8$, giving $n_b=64\cdot8=512$. At fixed shape the residual is linear in the load,
+$u-u_p=\sum_{k,j}W_{kj}(a_g)\,\hat t_j\,B_k(x;a_g)+\epsilon$, so $\beta_\theta$ learns the map
+$W(a_g)$.
+
+\textbf{(d) Sensitivity basis.}
+When the residual has no linear instance data, $F_k\equiv1$ and the spatial factor is a
+derivative of the prior. For optical thin films, $x=\lambda$, the instance is the TiO$_2$
+fraction profile $a=\theta(z)$, and with $\theta_k$ its value in depth bin $k\le 64$,
+\begin{equation}
+S_k(\lambda;a)=\frac{\partial R_p}{\partial\theta_k}(\lambda;a),
+\label{eq:fac-optical}
+\end{equation}
+the Fr\'echet derivative of the prior reflectance, evaluated by central differences, with
+$\beta_\theta$ a constant vector.
+
+\textbf{(e) Operator response.}
+When the geometry enters the operator itself, no factor of $\Phi_{\mathcal F_0}$ is free of
+it and $F_k\equiv1$: the spatial factor is the prior operator's own response to a fixed
+probe source, Eq.~\ref{eq:app-stokes-green}. For Pipe, $x$ is a point of the computational
+grid, $a_g$ the nine shape coordinates, and $S_k$ the horizontal velocity of
+$\mathcal{S}_{a_g}^{-1}\chi_k$ for $\chi_k=\sin(m\pi\xi)\sin(n\pi\eta)$ with $m\le32$,
+$n\le4$, giving $n_b=128$. Unlike form~(d) the coefficients are not constant: the operator
+moves with the instance, so $\beta_\theta$ must read the shape.
+
+
+\section{Experiment 1: settings and raw results}
+
+\label{app:exp1_details}
+
+Table~\ref{tab:bench_overview} is the roadmap for this appendix: it names, for every
+benchmark, the construction used, whether the resulting prior is direct or indirect,
+whether the construction exposes a reusable residual representation, and whether a
+residual loss exists at all. Table~\ref{tab:app-e1-spec} then gives the numerical
+specifications and Table~\ref{tab:constructions} the constructions themselves.
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{\textbf{The eighteen benchmarks and the level of Eq.~\ref{eq:progression} each one
+exercises.} ``Prior'' is \emph{direct} when $\mathcal{S}(\mathcal{F}_0,a)$ returns the field itself
+and no solution label is consumed (Eq.~\ref{eq:prior-solve}), \emph{indirect} when the equation
+returns an instance-side factor whose spatial coefficients are fitted by least squares
+(Eq.~\ref{eq:prior_ls}). ``Structure'' names $\Phi_{\mathcal{F}_0}$ where the construction exposes
+one; ``--'' means it exposes none. The \armpi\ column marks the eleven benchmarks admitting a
+differentiable residual at all. FNO applies only where $a$ is a field on the query grid; elsewhere
+the backbone is DeepONet (DON). Why the residual loss is absent:
+$^{a}$ the output is a single time slice, so $u_t$ cannot be formed;
+$^{b}$ equilibrium holds for the prior, the reference and any zero-stress field alike, so the
+residual is vacuous and \armpi\ is undefined rather than defeated;
+$^{c}$ the reference comes from tabulated dispersive optical constants, so the discrepancy is
+measured material data rather than an omitted differential term;
+$^{d}$ the discrete operator lives on an instance-dependent mesh and the RANS system is not closed
+(Section~\ref{sec:airfrans});
+$^{e}$ the target is one velocity component, so the momentum residual would need the pressure and
+the transverse component.
+Specifications: Table~\ref{tab:app-e1-spec}; constructions: Table~\ref{tab:constructions}.}
+\label{tab:bench_overview}
+\footnotesize
+    \setlength{\tabcolsep}{8pt}
+    \renewcommand{\arraystretch}{0.7}
+\begin{tabular}{@{}lllllc@{}}
+\toprule
+Benchmark & Construction & Prior & Structure $\Phi_{\mathcal{F}_0}$ & \armpi & Backbones\\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Eleven benchmarks admitting a differentiable residual: \textup{\armraw}, \textup{\armpi} and \textup{\armprior} are matched}}\\[2pt]
+1D nonlin.\ reaction  & direct solve          & direct   & --                      & $\checkmark$ & DON, FNO\\
+1D convection         & reduced equation      & direct   & --                      & $\checkmark$ & DON, FNO\\
+1D heat               & direct solve          & direct   & --                      & $\checkmark$ & DON, FNO\\
+battery               & direct solve          & direct   & --                      & $\checkmark$ & DON, FNO\\
+1D Darcy              & effective medium      & direct   & --                      & $\checkmark$ & DON, FNO\\
+2D Darcy              & effective medium      & direct   & --                      & $\checkmark$ & DON, FNO\\
+3D Darcy              & homogenized mean      & direct   & --                      & $\checkmark$ & DON, FNO\\
+Darcy \citep{li2020fourier} & homogenized mean & direct  & --                      & $\checkmark$ & DON, FNO\\
+2D Poisson            & spectral expansion    & direct   & modal basis             & $\checkmark$ & DON\\
+3D layered            & transfer matrix       & direct   & modal basis, interfaces & $\checkmark$ & DON\\
+annulus               & polar transfer matrix & direct   & radial modes            & $\checkmark$ & DON\\
+\midrule
+\multicolumn{6}{@{}l}{\emph{Seven benchmarks admitting no residual loss: the equation enters as a prior or not at all}}\\[2pt]
+1D Burgers            & viscous evolution     & direct   & --                      & --$^{a}$ & DON, FNO\\
+Burgers \citep{li2020fourier} & heat equation & direct   & --                      & --$^{a}$ & DON, FNO\\
+elasticity            & complex potential     & direct   & Laurent modes           & --$^{b}$ & DON\\
+optical               & characteristic matrix & direct   & sensitivity directions  & --$^{c}$ & DON\\
+Pipe \citep{li2023fourier} & Stokes solve     & direct   & Stokes Green response   & --$^{e}$ & DON, FNO\\
+Pipe-GRF              & Stokes solve          & direct   & --                      & --$^{e}$ & DON, FNO\\
+\textsc{AirfRANS}     & thin airfoil          & indirect & --                      & --$^{d}$ & DON\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+
+
+\subsection{How the residual weight is selected}
+\label{app:oracle}
+
+The weight $\lambda$ of \armpi\ is chosen by lowest error on the held-out
+set, and that held-out set is the one on which the reported error is computed. The
+selection is therefore an oracle: \armpi\ is handed a $\lambda$ chosen with knowledge
+of the evaluation, which no honest procedure could supply. This is deliberate, so
+that the loss is compared at its best rather than at a weight we happened to pick,
+but it invites the question of whether the prior's advantage survives a fair
+selection rule.
+
+It does, and for a structural reason. The oracle returns the minimum over the grid,
+so it upper-bounds every selection rule defined on that grid: any rule that does not
+see the evaluation can only match it or do worse. The reported margin of \armprior\
+over \armpi\ is thus a lower bound on the margin against an honestly tuned loss, and
+the direction of the comparison cannot be reversed by improving the selection.
+
+Table~\ref{tab:app-oracle} confirms that the bound is not vacuous. Alongside the
+oracle we score three alternatives on the same runs: a leave-one-seed-out rule, in
+which $\lambda$ is chosen by the mean over the other four seeds and evaluated on the
+seed held out, so the evaluated run never enters the selection; the mean over the
+nine-point grid, the expected result of choosing $\lambda$ at random; and the worst
+$\lambda$ on the grid. Moving from the oracle to the honest rule raises the count in favour of the
+prior from $331$ to $342$ of $438$ cells, and the two weaker rules raise it further, to $410$ and
+$428$. Across all $3933$ combinations of a matched cell and a grid value, \armpi\ is below
+\armprior\ in $651$; at $N=200$ the cells that admit any such $\lambda$ are 1D Darcy under both
+backbones and 2D Darcy, 3D Darcy, Darcy \citep{li2020fourier}, 1D heat and battery under
+\textsc{FNO}, which are the same Darcy-family and near-exhausted cells that Table~\ref{tab:strata}
+puts in its upper stratum.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{How the comparison depends on the rule that picks $\lambda$.} Each row counts the
+cells (benchmark $\times$ backbone $\times$ budget $\times$ seed) in which \armprior\ is the more
+accurate of the two. The oracle is the rule used throughout the paper and the most favourable to
+\armpi\ on this grid.}
+\label{tab:app-oracle}
+\footnotesize
+\setlength{\tabcolsep}{40pt}
+\renewcommand{\arraystretch}{0.7}
+\begin{tabular}{@{}lc@{}}
+\toprule
+Rule for choosing $\lambda$ & \armprior\ better\\
+\midrule
+Oracle: lowest error on the evaluation set (used throughout) & $331/438$\\
+Leave-one-seed-out: chosen on the other four seeds & $342/438$\\
+Mean over the nine-point grid & $410/438$\\
+Worst $\lambda$ on the grid & $428/438$\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Numerical specification of every benchmark.} $m$ is the input dimension the branch
+sees, $d_q$ the query dimension, $n_q$ the number of query points, $n_b$ the width of
+$\Phi_{\mathcal{F}_0}$ where one exists, and $n_{\mathrm{test}}$ the size of the shared held-out
+set. ``prior'' is $\varepsilon_{\mathrm{prior}}$, the relative $L_2$ error of $u_p$ alone on that
+set; on \textsc{AirfRANS} it is the value at $N=200$, the prior being refitted on every draw. Group
+A exposes no residual representation and group B does. The FNO column marks the benchmarks whose
+input is a field on the query grid.}
+\label{tab:app-e1-spec}
+\footnotesize
+\setlength{\tabcolsep}{8pt}
+\renewcommand{\arraystretch}{0.7}
+\begin{tabular}{lcrrrrr ccc}
+\toprule
+Benchmark & gr. & $m$ & $d_q$ & $n_q$ & $n_b$ & $n_{\mathrm{test}}$ & prior & FNO & $\Phi$\\
+\midrule
+1D nonlin.\ reaction & A & $128$ & $1$ & $201$ & -- & $150$ & 0.0029 & $\checkmark$ & --\\
+1D convection & A & $128$ & $1$ & $201$ & -- & $150$ & 0.1528 & $\checkmark$ & --\\
+1D heat & A & $128$ & $1$ & $201$ & -- & $150$ & 0.4930 & $\checkmark$ & --\\
+battery & A & $128$ & $1$ & $201$ & -- & $150$ & 0.5220 & $\checkmark$ & --\\
+1D Darcy & A & $128$ & $1$ & $201$ & -- & $150$ & 0.2245 & $\checkmark$ & --\\
+1D Burgers & A & $128$ & $1$ & $201$ & -- & $150$ & 0.2069 & $\checkmark$ & --\\
+2D Darcy & A & $4096$ & $2$ & $4096$ & -- & $150$ & 0.1964 & $\checkmark$ & --\\
+3D Darcy & A & $32768$ & $3$ & $32768$ & -- & $100$ & 0.1895 & $\checkmark$ & --\\
+Darcy \citep{li2020fourier} & A & $7225$ & $2$ & $7225$ & -- & $200$ & 0.2511 & $\checkmark$ & --\\
+Burgers \citep{li2020fourier} & A & $1024$ & $1$ & $1024$ & -- & $200$ & 0.3548 & $\checkmark$ & --\\
+2D Poisson & B & $4096$ & $2$ & $4096$ & $256$ & $150$ & 0.1827 & -- & $\checkmark$\\
+3D layered & B & $1156$ & $3$ & $8192$ & $3072$ & $150$ & 0.1751 & -- & $\checkmark$\\
+annulus & B & $132$ & $2$ & $1024$ & $216$ & $150$ & 0.6649 & -- & $\checkmark$\\
+elasticity & B & $259$ & $3$ & $4608$ & $512$ & $150$ & 0.3214 & -- & $\checkmark$\\
+optical & B & $128$ & $1$ & $512$ & $64$ & $150$ & 0.2941 & -- & $\checkmark$\\
+Pipe \citep{li2023fourier} & B & $16641$ & $2$ & $16641$ & $128$ & $200$ & 0.1070 & $\checkmark$ & $\checkmark$\\
+Pipe-GRF & A & $16641$ & $2$ & $16641$ & -- & $200$ & 0.0842 & $\checkmark$ & --\\
+\textsc{AirfRANS} & A & $34$ & $2$ & $2219$ & -- & $200$ & 0.3494 & -- & --\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Trainable parameters, counted from the instantiated models.} \armraw, \armpi\ and
+\armprior\ are the same network and therefore the same count. \armstruct, \armrand\ and \armpod\
+share a count, which is what makes the last two capacity-matched controls. Counts with the generic
+corrector deleted: Table~\ref{tab:nofree}. A dash marks a backbone or formulation the benchmark
+does not admit.}
+\label{tab:app-e1-params}
+\footnotesize
+\setlength{\tabcolsep}{10pt}
+\renewcommand{\arraystretch}{0.7}
+\begin{tabular}{lrrrr}
+\toprule
+Benchmark & DeepONet & FNO & \armstruct & \armrand\,/\,\armpod\\
+& \multicolumn{2}{c}{\armraw\,=\,\armpi\,=\,\armprior} & &\\
+\midrule
+1D nonlin.\ reaction & $21{,}850$ & $287{,}425$ & -- & --\\
+1D convection & $21{,}850$ & $287{,}425$ & -- & --\\
+1D heat & $21{,}850$ & $287{,}425$ & -- & --\\
+battery & $21{,}850$ & $287{,}425$ & -- & --\\
+1D Darcy & $21{,}850$ & $287{,}425$ & -- & --\\
+1D Burgers & $21{,}850$ & $287{,}425$ & -- & --\\
+2D Darcy & $220{,}300$ & $1{,}188{,}353$ & -- & --\\
+3D Darcy & $1{,}653{,}950$ & $3{,}281{,}397$ & -- & --\\
+Darcy \citep{li2020fourier} & $376{,}750$ & $1{,}188{,}353$ & -- & --\\
+Burgers \citep{li2020fourier} & $66{,}650$ & $287{,}425$ & -- & --\\
+2D Poisson & $220{,}300$ & -- & $220{,}558$ & $220{,}558$\\
+3D layered & $73{,}350$ & -- & $235{,}374$ & $235{,}374$\\
+annulus & $22{,}100$ & -- & $38{,}468$ & $38{,}468$\\
+elasticity & $28{,}500$ & -- & $59{,}914$ & $59{,}914$\\
+optical & $21{,}850$ & -- & $21{,}916$ & $21{,}916$\\
+Pipe \citep{li2023fourier} & $847{,}550$ & $1{,}188{,}353$ & -- & --\\
+Pipe-GRF & $847{,}550$ & $1{,}188{,}353$ & -- & --\\
+\textsc{AirfRANS} & $17{,}200$ & -- & -- & --\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+A cell here is a (benchmark, backbone, $N$) triple in which both arms ran on at least three shared seeds, with \armpi\ at its per-seed oracle $\lambda$. Paired over those seeds, \armprior\ is more accurate at $p<0.05$ in $37$ of the $58$ cells and \armpi\ in $14$; the remaining seven are unresolved. Every cell \armpi\ wins is in the Darcy family --- 1D Darcy under both backbones, 2D and 3D Darcy under \textsc{FNO} --- where the effective-medium construction leaves the largest $\varepsilon_{\mathrm{prior}}$ among the benchmarks that admit a residual. With five seeds these tests have limited power, so nonsignificant cells should not be interpreted as evidence of no difference.
+
+\subsection{Experimental setting}
+\label{app:e1-setting}
+
+\textbf{Operators.} We take both backbones and their training protocol from the reference
+implementations rather than tuning them.
+\emph{DeepONet} is the \textsc{DeepONetCP} of the PINO release: branch MLP $[m]+[50]\times4$ and
+trunk MLP $[d_q]+[50]\times4$, ReLU, no activation on the last layer of either, and no bias term
+$b_0$, so it differs from Eq.~2 of \citet{lu2021learning} in those two respects. Inputs are
+$z$-scored on the training instances and the output is normalised by a single scalar mean and
+standard deviation, the convention the FNO reference uses.
+\emph{FNO} \citep{li2020fourier} has four spectral blocks $x\mapsto\mathcal{K}(x)+Wx$ with GELU on
+the first three, a head $\mathrm{fc}_1\!\to\!128\!\to\!\mathrm{GELU}\!\to\!\mathrm{fc}_2\!\to\!1$
+and the query coordinates concatenated to the input; modes and width are $16/64$ in 1D, $12/32$ in
+2D and $8/20$ in 3D. Non-periodic axes are padded by $10\%$ of the grid, symmetrically on all three
+axes in 3D. FNO is used only where $a$ is a field on the query grid.
+
+\textbf{Optimisation.} Adam, learning rate $10^{-3}$, minibatch $20$, step decay $\times0.5$,
+weight decay $0$ for DeepONet and $10^{-4}$ for FNO, and the per-sample relative $L_2$ loss of the
+PINO release. The step budget is fixed in advance from the epoch counts of the two reference
+implementations ($2000$ epochs for DeepONet, $500$ for FNO) at $N=200$, and a cell with $N<200$
+receives the same number of steps rather than fewer. There is no validation set and no
+checkpoint selection: training runs the fixed budget and the final model is evaluated, so $N$ is
+the entire label budget. Identical for every formulation.
+
+\textbf{Seeds and splits.} Five seeds $\{0,7,17,23,42\}$ per cell; the seed fixes both the draw of
+the $N$ training instances and the network initialisation. The held-out set is drawn once per
+benchmark and shared by every formulation, budget and seed (sizes in
+Table~\ref{tab:app-e1-spec}). The reported error is the mean over held-out instances of the
+per-instance relative $L_2$ error $\|\hat u_i - u_i\|_2/\|u_i\|_2$; every cell also records the
+norm ratio $\|\hat u\|/\|u\|$ used in Table~\ref{tab:app-e1-collapse}.
+
+\textbf{Residual-loss formulations.} The PDE residual uses the \emph{same discretisation as the
+prior solver}, is normalised per sample by $|f|$, and adds boundary terms separately. The forcing
+seen by the residual is the same sensor interpolation the prior sees, not the true grid forcing.
+The weight $\lambda$ is swept over $\{10^{-10},10^{-8},10^{-6},10^{-5},10^{-4},10^{-3},10^{-2},
+10^{-1},1\}$ and selected per seed by lowest held-out error, i.e.\ an oracle
+(Appendix~\ref{app:oracle}). The grid contains the $\lambda\!\to\!0$ limit.
+
+\textbf{Initialisation of the corrector.} Under DeepONet the last linear layer of the corrector is
+initialised to zero, so the prediction at step $0$ is $u_p$ plus the scalar output offset, and the
+same holds for the two gates of \armstruct. Under FNO the corrector keeps its standard
+initialisation and its output is scaled by $\mathrm{std}(u)$ on the training set. Zero-initialising
+the FNO head instead leaves the spectral body with no data gradient while weight decay continues to
+act on it, and the body decays to zero: on Pipe this pinned the prediction at $u_p$ in $23$ of $25$
+cells, and scaling the output by the standard deviation of the residual rather than of $u$ does the
+same on any benchmark where the prior resolves most of the field.
+
+\textbf{Structural injection.} \armstruct\ adds to the \armprior\ model a second branch whose trunk
+is not learned but given by $\Phi(x;a)$, the basis the solution of $\mathcal{F}_0$ exposes. The
+\armprior\ model is retained unchanged inside it as the generic corrector $\epsilon_\theta$ of
+Eq.~\ref{eq:structural_injection}, so deleting the $\Phi$ branch recovers \armprior\ exactly and
+\armstruct\ carries more parameters than \armprior\ (Table~\ref{tab:app-e1-params}). The two
+branches are trained with the staged loss of Eq.~\ref{eq:staged-loss}: a joint loss on their sum
+lets them grow and cancel, which on optical drove both to $1.9$ and $2.2$ times the norm of the
+residual they were fitting. \armrand\ and \armpod\ keep $u_p$ and the source factor $F$ of
+Eq.~\ref{eq:factorized} and replace the spatial factor $S$, by a fixed random basis of the same
+width and by the leading POD modes of the training residuals zero-padded to that width, both
+rescaled to the norm of $\Phi_{\mathcal{F}_0}$ on the training set, and both trained with the same
+staged loss. Architecture and parameter count stay identical to \armstruct, so these two, not
+\armprior, are the capacity-matched comparisons. Appendix~\ref{app:nofree} measures what
+$\epsilon_\theta$ contributes.
+
+\textbf{Hardware.} Single RTX 3060; all cells of a table are produced on one device, since spectral kernels differ in the last digits across backends.
+
+\textbf{Benchmarks with no residual loss.} Seven of the eighteen benchmarks carry no
+\armpi\ column in Table~\ref{tab:app-e1-raw}, for reasons that differ. On the two \emph{Burgers}
+benchmarks the queried output is a single time slice of $u$, so $u_t$ cannot be formed
+from the prediction and the evolution residual $u_t+uu_x-\nu u_{xx}$ cannot be
+assembled; the other 1D benchmarks are steady or queried on the full space--time grid,
+which is why they do admit one. On the two \emph{Pipe} benchmarks the target is the
+streamwise velocity alone, so the momentum residual, which couples it to the pressure and the
+transverse velocity, cannot be evaluated on what the predictor emits. On \emph{elasticity} the equilibrium residual is
+assemblable but non-identifying. Our predictor emits the three stress components
+independently, so the penalty is not vacuous on its search space (a field with
+$\sigma_{xx}=x$ alone has $\nabla\!\cdot\!\sigma\neq0$), and it pushes predictions
+toward the equilibrium subspace. But that subspace holds the truth, the prior and the
+zero field alike, and what selects among them is boundary data the penalty does not
+carry. On \emph{optical} the
+reference is generated from tabulated dispersive $n_j(\lambda)$ and $k_j(\lambda)$, so
+the discrepancy the learner must close is measured material data; the query variable
+is wavelength and no differential operator in $\lambda$ relates the reflectance values
+at different wavelengths, so there is nothing to penalize. \textsc{AirfRANS} is
+treated in Section~\ref{sec:airfrans}. Elasticity and optical nonetheless expose a
+representation, and that representation is still
+usable, which is the point of separating the loss level from the prior and
+representation levels.
+
+
+
+
+The upper stratum of Table~\ref{tab:strata}, the seven pairs with
+$\varepsilon_{\mathrm{prior}}\ge0.196$, is 1D Darcy, 2D Darcy and Darcy \citep{li2020fourier}
+under both backbones together with annulus; it holds $15$ of the $19$
+cells the prior loses. The other four are 3D Darcy under \textsc{FNO} at $N\le100$, where the three
+formulations agree to within $0.006$ and the ordering is settled by the $N{=}10$ seeds that diverge
+(Section~\ref{sec:exp1}).
+
+{
+\setlength{\LTcapwidth}{\textwidth}
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{llrrrrrr}
+\caption{\textbf{Raw results for the formulations without $\Phi$.} Relative $L_2$ error, mean over
+five seeds, sample standard deviation in parentheses. $\lambda^\ast$ is the oracle residual weight,
+selected per seed on the evaluation set; the column gives the value chosen most often.
+\emph{Ridge} is a data-only baseline: input $z$-scored, ridge regression onto the query grid with
+the penalty chosen by cross-validation on the training instances, no equation and no network.}
+\label{tab:app-e1-raw}\\
+\toprule
+Benchmark & Op. & $N$ & \armraw & \armpi & $\lambda^\ast$ & \armprior & Ridge\\
+\midrule
+\endfirsthead
+\toprule
+Benchmark & Op. & $N$ & \armraw & \armpi & $\lambda^\ast$ & \armprior & Ridge\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1D nonlinear reaction & DeepONet & $10$ & 0.3934\,(0.1024) & 0.3646\,(0.1119) & $10^{-2}$ & 0.0040\,(0.0017) & 0.0656\\
+ &  & $25$ & 0.1261\,(0.0236) & 0.1218\,(0.0239) & $10^{-8}$ & 0.0034\,(0.0010) & 0.0153\\
+ &  & $50$ & 0.0571\,(0.0080) & 0.0560\,(0.0073) & $10^{-4}$ & 0.0018\,(0.0002) & 0.0088\\
+ &  & $100$ & 0.0386\,(0.0078) & 0.0358\,(0.0071) & $10^{-4}$ & 0.0011\,(0.0002) & 0.0075\\
+ &  & $200$ & 0.0246\,(0.0029) & 0.0230\,(0.0024) & $10^{-5}$ & 0.0004\,(0.0001) & 0.0087\\
+ &  & $500$ & 0.0134\,(0.0020) & -- & -- & 0.0001\,(0.0000) & --\\
+ & FNO & $10$ & 0.3914\,(0.0909) & 0.3188\,(0.0826) & $10^{0}$ & 0.0030\,(0.0006) & 0.0656\\
+ &  & $25$ & 0.1074\,(0.0214) & 0.0638\,(0.0103) & $10^{0}$ & 0.0019\,(0.0002) & 0.0153\\
+ &  & $50$ & 0.0335\,(0.0082) & 0.0204\,(0.0085) & $10^{0}$ & 0.0011\,(0.0004) & 0.0088\\
+ &  & $100$ & 0.0099\,(0.0014) & 0.0078\,(0.0011) & $10^{-1}$ & 0.0009\,(0.0004) & 0.0075\\
+ &  & $200$ & 0.0064\,(0.0007) & 0.0051\,(0.0004) & $10^{0}$ & 0.0006\,(0.0001) & 0.0087\\
+ &  & $500$ & 0.0045\,(0.0007) & -- & -- & 0.0004\,(0.0001) & --\\
+1D Burgers & DeepONet & $10$ & 0.4941\,(0.0938) & -- & -- & 0.2244\,(0.0285) & 0.3987\\
+ &  & $25$ & 0.2916\,(0.0273) & -- & -- & 0.1762\,(0.0076) & 0.2866\\
+ &  & $50$ & 0.1930\,(0.0122) & -- & -- & 0.1376\,(0.0066) & 0.2574\\
+ &  & $100$ & 0.1479\,(0.0063) & -- & -- & 0.0994\,(0.0037) & 0.2502\\
+ &  & $200$ & 0.1174\,(0.0049) & -- & -- & 0.0704\,(0.0023) & 0.2472\\
+ &  & $500$ & 0.0765\,(0.0021) & -- & -- & 0.0416\,(0.0015) & --\\
+ & FNO & $10$ & 0.2010\,(0.0436) & -- & -- & 0.1342\,(0.0204) & 0.3987\\
+ &  & $25$ & 0.0665\,(0.0038) & -- & -- & 0.0463\,(0.0052) & 0.2866\\
+ &  & $50$ & 0.0267\,(0.0039) & -- & -- & 0.0207\,(0.0020) & 0.2574\\
+ &  & $100$ & 0.0103\,(0.0013) & -- & -- & 0.0086\,(0.0009) & 0.2502\\
+ &  & $200$ & 0.0064\,(0.0004) & -- & -- & 0.0047\,(0.0003) & 0.2472\\
+ &  & $500$ & 0.0031\,(0.0001) & -- & -- & 0.0025\,(0.0001) & --\\
+1D heat & DeepONet & $10$ & 0.4015\,(0.1314) & 0.3793\,(0.1191) & $10^{-8}$ & 0.1989\,(0.0817) & 0.0611\\
+ &  & $25$ & 0.1514\,(0.0297) & 0.1447\,(0.0314) & $10^{-10}$ & 0.0548\,(0.0190) & 0.0021\\
+ &  & $50$ & 0.0723\,(0.0133) & 0.0652\,(0.0080) & $10^{-10}$ & 0.0264\,(0.0074) & 0.0004\\
+ &  & $100$ & 0.0457\,(0.0093) & 0.0478\,(0.0132) & $10^{-8}$ & 0.0163\,(0.0056) & --\\
+ &  & $200$ & 0.0310\,(0.0070) & 0.0300\,(0.0047) & $10^{-8}$ & 0.0139\,(0.0044) & 0.0000\\
+ &  & $500$ & 0.0151\,(0.0022) & -- & -- & 0.0047\,(0.0014) & --\\
+ & FNO & $10$ & 0.3364\,(0.1044) & 0.3199\,(0.0837) & $10^{-8}$ & 0.2307\,(0.0680) & 0.0611\\
+ &  & $25$ & 0.0996\,(0.0090) & 0.0912\,(0.0075) & $10^{-6}$ & 0.0633\,(0.0113) & 0.0021\\
+ &  & $50$ & 0.0339\,(0.0063) & 0.0303\,(0.0084) & $10^{-6}$ & 0.0183\,(0.0035) & 0.0004\\
+ &  & $100$ & 0.0139\,(0.0019) & 0.0127\,(0.0013) & $10^{-4}$ & 0.0105\,(0.0018) & --\\
+ &  & $200$ & 0.0109\,(0.0011) & 0.0099\,(0.0009) & $10^{-8}$ & 0.0087\,(0.0015) & 0.0000\\
+ &  & $500$ & 0.0069\,(0.0011) & -- & -- & 0.0039\,(0.0003) & --\\
+1D convection & DeepONet & $10$ & 0.3645\,(0.0825) & 0.3373\,(0.0748) & $10^{-5}$ & 0.0739\,(0.0238) & 0.0608\\
+ &  & $25$ & 0.1494\,(0.0303) & 0.1444\,(0.0263) & $10^{-5}$ & 0.0307\,(0.0128) & 0.0026\\
+ &  & $50$ & 0.0745\,(0.0056) & 0.0732\,(0.0042) & $10^{-3}$ & 0.0161\,(0.0023) & 0.0003\\
+ &  & $100$ & 0.0482\,(0.0045) & 0.0457\,(0.0025) & $10^{-8}$ & 0.0098\,(0.0009) & --\\
+ &  & $200$ & 0.0328\,(0.0011) & 0.0305\,(0.0010) & $10^{-4}$ & 0.0081\,(0.0005) & 0.0000\\
+ &  & $500$ & 0.0187\,(0.0015) & -- & -- & 0.0048\,(0.0003) & --\\
+ & FNO & $10$ & 0.4428\,(0.0940) & 0.2759\,(0.0635) & $10^{0}$ & 0.0770\,(0.0150) & 0.0608\\
+ &  & $25$ & 0.1144\,(0.0333) & 0.1120\,(0.0334) & $10^{-3}$ & 0.0194\,(0.0029) & 0.0026\\
+ &  & $50$ & 0.0352\,(0.0051) & 0.0344\,(0.0049) & $10^{-10}$ & 0.0067\,(0.0020) & 0.0003\\
+ &  & $100$ & 0.0122\,(0.0017) & 0.0118\,(0.0017) & $10^{-5}$ & 0.0022\,(0.0004) & --\\
+ &  & $200$ & 0.0070\,(0.0015) & 0.0063\,(0.0003) & $10^{-6}$ & 0.0017\,(0.0001) & 0.0000\\
+ &  & $500$ & 0.0039\,(0.0003) & -- & -- & 0.0010\,(0.0002) & --\\
+battery & DeepONet & $10$ & 0.4721\,(0.1248) & 0.4529\,(0.1197) & $10^{-6}$ & 0.2970\,(0.0645) & 0.1616\\
+ &  & $25$ & 0.1821\,(0.0343) & 0.1729\,(0.0320) & $10^{-6}$ & 0.1471\,(0.0256) & 0.0214\\
+ &  & $50$ & 0.0928\,(0.0146) & 0.0869\,(0.0123) & $10^{-4}$ & 0.0853\,(0.0232) & 0.0033\\
+ &  & $100$ & 0.0531\,(0.0039) & 0.0506\,(0.0028) & $10^{-4}$ & 0.0541\,(0.0052) & --\\
+ &  & $200$ & 0.0321\,(0.0014) & 0.0294\,(0.0035) & $10^{-6}$ & 0.0264\,(0.0021) & 0.0000\\
+ &  & $500$ & 0.0126\,(0.0018) & -- & -- & 0.0101\,(0.0006) & --\\
+ & FNO & $10$ & 0.4949\,(0.1204) & 0.4598\,(0.1068) & $10^{-3}$ & 0.3185\,(0.0424) & 0.1616\\
+ &  & $25$ & 0.2717\,(0.0501) & 0.2410\,(0.0185) & $10^{-3}$ & 0.1731\,(0.0144) & 0.0214\\
+ &  & $50$ & 0.1484\,(0.0312) & 0.1277\,(0.0325) & $10^{-3}$ & 0.1132\,(0.0223) & 0.0033\\
+ &  & $100$ & 0.0683\,(0.0092) & 0.0641\,(0.0072) & $10^{-10}$ & 0.0568\,(0.0108) & --\\
+ &  & $200$ & 0.0345\,(0.0072) & 0.0312\,(0.0073) & $10^{-4}$ & 0.0297\,(0.0053) & 0.0000\\
+ &  & $500$ & 0.0174\,(0.0020) & -- & -- & 0.0138\,(0.0017) & --\\
+1D Darcy & DeepONet & $10$ & 0.1694\,(0.0363) & 0.1510\,(0.0169) & $10^{-5}$ & 0.1490\,(0.0361) & 0.1356\\
+ &  & $25$ & 0.0769\,(0.0064) & 0.0744\,(0.0046) & $10^{-5}$ & 0.0824\,(0.0127) & 0.1107\\
+ &  & $50$ & 0.0550\,(0.0080) & 0.0538\,(0.0047) & $10^{-5}$ & 0.0573\,(0.0036) & 0.1018\\
+ &  & $100$ & 0.0372\,(0.0028) & 0.0362\,(0.0025) & $10^{-10}$ & 0.0428\,(0.0020) & 0.0994\\
+ &  & $200$ & 0.0271\,(0.0014) & 0.0266\,(0.0024) & $10^{-6}$ & 0.0328\,(0.0007) & 0.0988\\
+ &  & $500$ & 0.0190\,(0.0016) & -- & -- & 0.0241\,(0.0009) & --\\
+ & FNO & $10$ & 0.1050\,(0.0319) & 0.0847\,(0.0224) & $10^{-2}$ & 0.1446\,(0.0324) & 0.1356\\
+ &  & $25$ & 0.0377\,(0.0051) & 0.0338\,(0.0035) & $10^{-2}$ & 0.0581\,(0.0104) & 0.1107\\
+ &  & $50$ & 0.0175\,(0.0014) & 0.0161\,(0.0012) & $10^{-3}$ & 0.0285\,(0.0039) & 0.1018\\
+ &  & $100$ & 0.0097\,(0.0005) & 0.0090\,(0.0005) & $10^{-4}$ & 0.0129\,(0.0020) & 0.0994\\
+ &  & $200$ & 0.0061\,(0.0007) & 0.0056\,(0.0005) & $10^{-4}$ & 0.0077\,(0.0010) & 0.0988\\
+ &  & $500$ & 0.0037\,(0.0003) & -- & -- & 0.0037\,(0.0006) & --\\
+2D Darcy & DeepONet & $10$ & 0.3518\,(0.0303) & 0.3369\,(0.0113) & $10^{-2}$ & 0.1607\,(0.0032) & 0.1481\\
+ &  & $25$ & 0.2507\,(0.0128) & 0.2440\,(0.0107) & $10^{-1}$ & 0.1360\,(0.0040) & 0.1120\\
+ &  & $50$ & 0.1967\,(0.0043) & 0.1890\,(0.0071) & $10^{-2}$ & 0.1149\,(0.0031) & 0.0930\\
+ &  & $100$ & 0.1487\,(0.0054) & 0.1423\,(0.0029) & $10^{-2}$ & 0.0954\,(0.0009) & 0.0783\\
+ &  & $200$ & 0.1116\,(0.0028) & 0.1094\,(0.0018) & $10^{-3}$ & 0.0821\,(0.0009) & 0.0690\\
+ &  & $500$ & 0.0859\,(0.0012) & -- & -- & 0.0734\,(0.0019) & --\\
+ & FNO & $10$ & 0.1361\,(0.0500) & 0.1347\,(0.0506) & $10^{-4}$ & 0.1962\,(0.1729) & 0.1481\\
+ &  & $25$ & 0.0665\,(0.0026) & 0.0660\,(0.0024) & $10^{-2}$ & 0.0803\,(0.0089) & 0.1120\\
+ &  & $50$ & 0.0466\,(0.0014) & 0.0458\,(0.0016) & $10^{-2}$ & 0.0548\,(0.0019) & 0.0930\\
+ &  & $100$ & 0.0298\,(0.0014) & 0.0294\,(0.0015) & $10^{-3}$ & 0.0338\,(0.0021) & 0.0783\\
+ &  & $200$ & 0.0213\,(0.0014) & 0.0210\,(0.0013) & $10^{-3}$ & 0.0217\,(0.0009) & 0.0690\\
+ &  & $500$ & 0.0136\,(0.0004) & -- & -- & 0.0128\,(0.0009) & --\\
+3D Darcy & DeepONet & $10$ & 0.5291\,(0.0209) & 0.5130\,(0.0151) & $10^{-2}$ & 0.1792\,(0.0026) & 0.1698\\
+ &  & $25$ & 0.4533\,(0.0225) & 0.4376\,(0.0187) & $10^{-1}$ & 0.1712\,(0.0026) & 0.1394\\
+ &  & $50$ & 0.3798\,(0.0072) & 0.3654\,(0.0088) & $10^{-1}$ & 0.1543\,(0.0019) & 0.1118\\
+ &  & $100$ & 0.2852\,(0.0091) & 0.2773\,(0.0060) & $10^{-2}$ & 0.1366\,(0.0023) & 0.0898\\
+ &  & $200$ & 0.2027\,(0.0016) & 0.1971\,(0.0020) & $10^{-2}$ & 0.1235\,(0.0010) & 0.0739\\
+ &  & $500$ & 0.1491\,(0.0046) & -- & -- & 0.1105\,(0.0013) & --\\
+ & FNO & $10$ & 0.5789\,(0.4079) & 0.2989\,(0.2550) & $10^{-1}$ & 0.6839\,(0.3769) & 0.1698\\
+ &  & $25$ & 0.0531\,(0.0038) & 0.0528\,(0.0039) & $10^{-2}$ & 0.0601\,(0.0056) & 0.1394\\
+ &  & $50$ & 0.0384\,(0.0020) & 0.0383\,(0.0021) & $10^{-3}$ & 0.0426\,(0.0022) & 0.1118\\
+ &  & $100$ & 0.0282\,(0.0004) & 0.0280\,(0.0004) & $10^{-3}$ & 0.0290\,(0.0004) & 0.0898\\
+ &  & $200$ & 0.0238\,(0.0004) & 0.0238\,(0.0004) & $10^{-4}$ & 0.0235\,(0.0006) & 0.0739\\
+ &  & $500$ & 0.0187\,(0.0005) & -- & -- & 0.0183\,(0.0003) & --\\
+2D Poisson & DeepONet & $10$ & 0.7007\,(0.0363) & 0.6824\,(0.0403) & $10^{-1}$ & 0.1169\,(0.0175) & 0.4061\\
+ &  & $25$ & 0.5369\,(0.0205) & 0.5230\,(0.0227) & $10^{-3}$ & 0.0704\,(0.0092) & 0.1534\\
+ &  & $50$ & 0.3995\,(0.0142) & 0.3811\,(0.0132) & $10^{-2}$ & 0.0408\,(0.0031) & 0.0626\\
+ &  & $100$ & 0.2944\,(0.0114) & 0.2798\,(0.0112) & $10^{-1}$ & 0.0231\,(0.0007) & 0.0238\\
+ &  & $200$ & 0.2240\,(0.0048) & 0.2127\,(0.0053) & $10^{-1}$ & 0.0161\,(0.0006) & 0.0087\\
+ &  & $500$ & 0.1109\,(0.0074) & 0.1101\,(0.0069) & $10^{-5}$ & 0.0104\,(0.0004) & 0.0022\\
+3D layered & DeepONet & $10$ & 1.1386\,(0.1090) & 1.0448\,(0.0565) & $10^{0}$ & 0.1908\,(0.0069) & 1.5439\\
+ &  & $25$ & 1.2340\,(0.0319) & 1.0255\,(0.0258) & $10^{0}$ & 0.1995\,(0.0097) & 1.3592\\
+ &  & $50$ & 1.3825\,(0.1372) & 1.0343\,(0.0257) & $10^{0}$ & 0.2147\,(0.0121) & 1.2628\\
+ &  & $100$ & 1.5477\,(0.1078) & 1.0379\,(0.0170) & $10^{0}$ & 0.2295\,(0.0096) & 1.2170\\
+ &  & $200$ & 1.6102\,(0.0816) & 1.0350\,(0.0295) & $10^{0}$ & 0.2377\,(0.0096) & 1.1374\\
+ &  & $500$ & 1.6093\,(0.0592) & -- & -- & 0.2516\,(0.0050) & 1.0782\\
+annulus & DeepONet & $10$ & 0.9963\,(0.0426) & 0.9139\,(0.0438) & $10^{-4}$ & 0.6866\,(0.0250) & 0.9019\\
+ &  & $25$ & 0.8292\,(0.0432) & 0.7906\,(0.0344) & $10^{-5}$ & 0.6181\,(0.0077) & 0.7072\\
+ &  & $50$ & 0.7829\,(0.0171) & 0.7177\,(0.0198) & $10^{-4}$ & 0.6386\,(0.0136) & 0.6104\\
+ &  & $100$ & 0.6901\,(0.0285) & 0.6379\,(0.0105) & $10^{-5}$ & 0.6082\,(0.0139) & 0.5514\\
+ &  & $200$ & 0.5774\,(0.0086) & 0.5650\,(0.0158) & $10^{-5}$ & 0.5195\,(0.0204) & 0.5257\\
+ &  & $500$ & 0.4373\,(0.0053) & -- & -- & 0.4491\,(0.0084) & 0.5042\\
+elasticity & DeepONet & $10$ & 0.9101\,(0.0322) & -- & -- & 0.2749\,(0.0157) & 0.8372\\
+ &  & $25$ & 0.7523\,(0.0256) & -- & -- & 0.2058\,(0.0234) & 0.5833\\
+ &  & $50$ & 0.6340\,(0.0132) & -- & -- & 0.1534\,(0.0075) & 0.4567\\
+ &  & $100$ & 0.5699\,(0.0076) & -- & -- & 0.1306\,(0.0019) & 0.3968\\
+ &  & $200$ & 0.5223\,(0.0101) & -- & -- & 0.1098\,(0.0018) & 0.3615\\
+ &  & $500$ & 0.4172\,(0.0034) & -- & -- & 0.0765\,(0.0009) & 0.3277\\
+optical & DeepONet & $10$ & 0.5885\,(0.0774) & -- & -- & 0.3796\,(0.0830) & 0.3809\\
+ &  & $25$ & 0.3455\,(0.0331) & -- & -- & 0.2402\,(0.0293) & 0.3185\\
+ &  & $50$ & 0.2831\,(0.0155) & -- & -- & 0.2152\,(0.0155) & 0.2817\\
+ &  & $100$ & 0.2118\,(0.0073) & -- & -- & 0.1652\,(0.0088) & 0.2712\\
+ &  & $200$ & 0.1605\,(0.0173) & -- & -- & 0.1229\,(0.0087) & 0.2655\\
+ &  & $500$ & 0.0920\,(0.0095) & -- & -- & 0.0600\,(0.0034) & 0.2598\\
+Darcy (Li et al.) & DeepONet & $10$ & 0.2794\,(0.0228) & -- & -- & 0.1643\,(0.0172) & 0.1473\\
+ &  & $25$ & 0.2023\,(0.0110) & -- & -- & 0.1289\,(0.0052) & 0.1111\\
+ &  & $50$ & 0.1738\,(0.0048) & -- & -- & 0.1064\,(0.0030) & 0.0922\\
+ &  & $100$ & 0.1291\,(0.0026) & -- & -- & 0.0878\,(0.0009) & 0.0807\\
+ &  & $200$ & 0.0989\,(0.0040) & 0.0950\,(0.0020) & $10^{-2}$ & 0.0716\,(0.0007) & 0.0738\\
+ &  & $500$ & 0.0751\,(0.0018) & -- & -- & 0.0625\,(0.0009) & 0.0705\\
+ & FNO & $10$ & 0.1060\,(0.0098) & -- & -- & 0.1253\,(0.0154) & 0.1473\\
+ &  & $25$ & 0.0650\,(0.0030) & -- & -- & 0.0769\,(0.0042) & 0.1111\\
+ &  & $50$ & 0.0429\,(0.0024) & -- & -- & 0.0536\,(0.0016) & 0.0922\\
+ &  & $100$ & 0.0268\,(0.0016) & -- & -- & 0.0313\,(0.0013) & 0.0807\\
+ &  & $200$ & 0.0185\,(0.0010) & 0.0184\,(0.0010) & $10^{-3}$ & 0.0193\,(0.0011) & 0.0738\\
+ &  & $500$ & 0.0121\,(0.0003) & -- & -- & 0.0119\,(0.0005) & 0.0705\\
+Burgers (Li et al.) & DeepONet & $10$ & 0.5357\,(0.0596) & -- & -- & 0.3613\,(0.0204) & 0.5683\\
+ &  & $25$ & 0.3665\,(0.0257) & -- & -- & 0.2793\,(0.0193) & 0.4643\\
+ &  & $50$ & 0.2827\,(0.0289) & -- & -- & 0.2291\,(0.0054) & 0.4245\\
+ &  & $100$ & 0.2281\,(0.0135) & -- & -- & 0.1974\,(0.0072) & 0.3909\\
+ &  & $200$ & 0.1934\,(0.0084) & -- & -- & 0.1676\,(0.0041) & 0.3776\\
+ &  & $500$ & 0.1579\,(0.0052) & -- & -- & 0.1243\,(0.0040) & 0.3674\\
+ & FNO & $10$ & 0.1213\,(0.0181) & -- & -- & 0.1283\,(0.0182) & 0.5683\\
+ &  & $25$ & 0.0308\,(0.0059) & -- & -- & 0.0355\,(0.0088) & 0.4643\\
+ &  & $50$ & 0.0137\,(0.0016) & -- & -- & 0.0149\,(0.0020) & 0.4245\\
+ &  & $100$ & 0.0056\,(0.0005) & -- & -- & 0.0061\,(0.0007) & 0.3909\\
+ &  & $200$ & 0.0038\,(0.0003) & -- & -- & 0.0035\,(0.0002) & 0.3776\\
+ &  & $500$ & 0.0023\,(0.0005) & -- & -- & 0.0020\,(0.0001) & 0.3674\\
+Pipe (Li et al.) & DeepONet & $10$ & 0.2464\,(0.0142) & -- & -- & 0.1039\,(0.0057) & 0.1300\\
+ &  & $25$ & 0.1788\,(0.0022) & -- & -- & 0.0884\,(0.0022) & 0.0467\\
+ &  & $50$ & 0.1460\,(0.0061) & -- & -- & 0.0738\,(0.0017) & 0.0403\\
+ &  & $100$ & 0.1203\,(0.0022) & -- & -- & 0.0598\,(0.0037) & 0.0373\\
+ &  & $200$ & 0.1009\,(0.0058) & -- & -- & 0.0434\,(0.0025) & 0.0363\\
+ &  & $500$ & 0.0413\,(0.0027) & -- & -- & 0.0325\,(0.0013) & 0.0354\\
+ & FNO & $10$ & 0.1198\,(0.0046) & -- & -- & 0.0844\,(0.0051) & 0.1300\\
+ &  & $25$ & 0.0778\,(0.0061) & -- & -- & 0.0582\,(0.0038) & 0.0467\\
+ &  & $50$ & 0.0525\,(0.0040) & -- & -- & 0.0455\,(0.0031) & 0.0403\\
+ &  & $100$ & 0.0273\,(0.0028) & -- & -- & 0.0312\,(0.0054) & 0.0373\\
+ &  & $200$ & 0.0169\,(0.0015) & -- & -- & 0.0196\,(0.0019) & 0.0363\\
+Pipe-GRF & DeepONet & $10$ & 0.3194\,(0.0218) & -- & -- & 0.1093\,(0.0046) & 0.1557\\
+ &  & $25$ & 0.2183\,(0.0064) & -- & -- & 0.0901\,(0.0028) & 0.0855\\
+ &  & $50$ & 0.2049\,(0.0079) & -- & -- & 0.0885\,(0.0010) & 0.0369\\
+ &  & $100$ & 0.1838\,(0.0069) & -- & -- & 0.0832\,(0.0027) & 0.0311\\
+ &  & $200$ & 0.1606\,(0.0079) & -- & -- & 0.0791\,(0.0024) & 0.0290\\
+ &  & $500$ & 0.0960\,(0.0048) & -- & -- & 0.0646\,(0.0039) & --\\
+ & FNO & $10$ & 0.1232\,(0.0127) & -- & -- & 0.0789\,(0.0112) & 0.1557\\
+ &  & $25$ & 0.0723\,(0.0058) & -- & -- & 0.0477\,(0.0039) & 0.0855\\
+ &  & $50$ & 0.0627\,(0.0038) & -- & -- & 0.0439\,(0.0027) & 0.0369\\
+ &  & $100$ & 0.0561\,(0.0045) & -- & -- & 0.0400\,(0.0020) & 0.0311\\
+ &  & $200$ & 0.0484\,(0.0029) & -- & -- & 0.0385\,(0.0015) & 0.0290\\
+ &  & $500$ & 0.0338\,(0.0032) & -- & -- & 0.0309\,(0.0022) & --\\
+\end{longtable}
+}
+\vspace{-3mm}
+
+
+\begin{table}[t]
+\centering
+\caption{\textbf{When \armpi\ and \armraw\ return a field near zero.} Error and norm ratio
+$\|\hat u\|/\|u\|$ at each weight on the grid, averaged over five seeds at $N=200$, for the two
+benchmarks on which a formulation scores close to the error of a zero prediction ($1.00$). The last
+block is \armraw\ on 3D layered, whose error exceeds $1$: a full-norm prediction uncorrelated with
+the target.}
+\label{tab:app-e1-collapse}
+\footnotesize
+\setlength{\tabcolsep}{22pt}
+\renewcommand{\arraystretch}{0.7}
+\begin{tabular}{llrr}
+\toprule
+Benchmark & $\lambda$ & rel.\ $L_2$ & $\|\hat u\|/\|u\|$\\
+\midrule
+3D layered & $10^{-10}$ & 1.6022 & 1.1314\\
+ & $10^{-8}$ & 1.5794 & 1.1193\\
+ & $10^{-6}$ & 1.5985 & 1.1293\\
+ & $10^{-5}$ & 1.5623 & 1.0799\\
+ & $10^{-4}$ & 1.5095 & 1.0226\\
+ & $10^{-3}$ & 1.3544 & 0.7792\\
+ & $10^{-2}$ & 1.2873 & 0.6575\\
+ & $10^{-1}$ & 1.1430 & 0.4319\\
+ & $10^{0}$ & 1.0350 & 0.2129\\
+\addlinespace[2pt]
+annulus & $10^{-10}$ & 0.5753 & 1.0035\\
+ & $10^{-8}$ & 0.5786 & 0.9942\\
+ & $10^{-6}$ & 0.5806 & 0.9846\\
+ & $10^{-5}$ & 0.5664 & 0.9490\\
+ & $10^{-4}$ & 0.6189 & 0.7995\\
+ & $10^{-3}$ & 0.8635 & 0.3620\\
+ & $10^{-2}$ & 0.9803 & 0.0560\\
+ & $10^{-1}$ & 0.9994 & 0.0021\\
+ & $10^{0}$ & 1.0000 & 0.0005\\
+\addlinespace[2pt]
+3D layered (\armraw) & $N=10$ & 1.1386 & 0.3951\\
+ & $N=25$ & 1.2340 & 0.5652\\
+ & $N=50$ & 1.3825 & 0.7974\\
+ & $N=100$ & 1.5477 & 1.0372\\
+ & $N=200$ & 1.6102 & 1.1532\\
+ & $N=500$ & 1.6093 & 1.2093\\
+ & $N=1000$ & 1.6392 & 1.2809\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+
+
+
+
+\subsection{Why \armpi\ approaches the prior on annulus and 3D layered}
+\label{app:pi-collapse}
+
+On 3D layered and annulus, two formulations sit near or above the error a prediction of zero
+would produce. \armraw\ and \armpi\ carry no prior, so a relative error of exactly $1.00$ is
+what the zero field gives, and a number near $1.00$ can mean either a fit that has learned nothing
+or an abstention. To separate the two we record, alongside the error, the norm ratio
+$\|\hat u\|/\|u\|$ of the prediction on the held-out set; Table~\ref{tab:app-e1-collapse}
+reports it across the $\lambda$ grid at $N=200$.
+
+The two failures are opposite. \armpi\ abstains: as $\lambda$ grows its norm ratio falls to
+$0.21$ on 3D layered and to $0.0005$ on annulus, and the error converges to $1.00$ from below: the
+residual of $\mathcal{F}_0$ is minimised by the zero field and, at the weight the oracle selects,
+the label term cannot hold the prediction away from it. Its apparent ``win'' over \armprior\ on
+3D layered ($1.0350$ against $2.3\times$ that at the smallest weight) is a comparison between the
+prior and silence, which is why Section~\ref{sec:exp1} reports that pair as prior against
+abstention rather than as a ratio. \armraw\ does the reverse: on 3D layered its norm ratio rises
+from $0.40$ at $N{=}10$ to $1.28$ at $N{=}1000$ while its error rises from $1.14$ to $1.64$, a
+full-scale prediction uncorrelated with the target. The solution there is bilinear in the
+conductivity and the interface resistance and strongly nonlinear in the layer thicknesses, and
+$200$ labels are not enough for the backbone to find that structure; the equation supplies it for
+free, and \armstruct\ reaches $0.0347$.
+
+
+
+
+
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{16pt}
+\renewcommand{\arraystretch}{0.7}
+\caption{\textbf{The prior-versus-loss margin, by how much the prior resolves.} The thirteen
+benchmark--architecture pairs that admit both formulations and are not solved by a data-only
+ridge, sorted by $\varepsilon_{\mathrm{prior}}$ and split at its median; each pair contributes one
+cell per budget it was run at ($58$ cells, five seeds each). 1D heat, 1D convection and battery
+are excluded for the reason given in Section~\ref{sec:exp1}. \armpi\ is at its oracle weight, so
+the margin is a lower bound on what a practical $\lambda$ rule would give.}
+\label{tab:strata}
+\vspace{1mm}
+\begin{tabular}{@{}lcrrcc@{}}
+\toprule
+Stratum & $\varepsilon_{\mathrm{prior}}$ & pairs & cells & \armprior\ better & geo.\ mean \armpi/\armprior \\
+\midrule
+resolves more  & $0.003$--$0.190$ & 6 & 31 & $27/31$ & $6.65\times$ \\
+resolves less  & $0.196$--$0.665$ & 7 & 27 & $12/27$ & $0.99\times$ \\
+\midrule
+all            & $0.003$--$0.665$ & 13 & 58 & $39/58$ & $2.74\times$ \\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+
+
+
+\subsection{Exposed basis order behaves like capacity}
+
+\label{app:kmax}
+
+The basis is not free: its width is a number of coefficients the budget has to estimate. Of the
+six benchmarks that expose $\Phi$, \armstruct\ finishes above the \armprior\ model it extends
+on exactly one, \emph{elasticity}, and only at the smallest budgets: $0.4317$ against $0.2749$
+at $N{=}10$, $0.2978$ against $0.2058$ at $N{=}25$, $0.1838$ against $0.1534$ at $N{=}50$, and
+$0.1008$ against $0.1306$ at $N{=}100$, after which it stays ahead ($0.0349$ against $0.0571$ at
+$N{=}1000$).
+
+The cause is the coefficient map, not the corrector. Elasticity is the one benchmark whose
+instance factor is a function rather than a few numbers: the load enters as a boundary traction
+expanded in $32$ modes, so $\beta_\theta$ must learn a map into $n_b$ Laurent coefficients from
+$N$ examples. Freezing the generic corrector changes nothing ($\armstruct_{\text{no-free}}$ is
+$0.4311$ against $0.4317$ at $N{=}10$, Table~\ref{tab:nofree}), while narrowing the basis does:
+the construction used here truncates the Laurent orders to $|k|\le2$ and the load modes to
+$|k_B|\le8$, giving $n_b=512$ instead of $4096$, without which the branch fits the training set
+($0.012$) and not the test set ($0.183$) at $N{=}200$. Exposed width therefore behaves like
+capacity: it buys expressiveness and charges samples for it. We report one truncation for all
+budgets; selecting it per budget would tune the method to the budget.
+
+
+
+
+
+
+\subsection{Raising the dimension of the coefficient map}
+\label{app:beta-dim}
+
+On the structural benchmarks $\beta_\theta$ reads a geometry vector of three or four numbers, so
+the structured branch could be read as a low-dimensional regression dressed up as operator
+learning. The annulus admits a clean test of that reading: its geometry is the set of $L-1$
+interface radii, so raising the number of regions raises the dimension of $\beta_\theta$'s domain
+and leaves everything else in place. We build $L\in\{5,9,17\}$, giving domains of $4$, $8$ and
+$16$ dimensions and bases of $n_b=216$, $408$ and $792$ columns, with the conductivities tiled
+periodically so that the material contrast --- the source of the effect being learned --- does
+not change with $L$. The default benchmark is $L{=}5$, and the other two are additional
+registrations, so the $L{=}5$ results are bit-identical to those in the main text.
+
+\begin{table}[H]
+\centering
+\caption{\textbf{Annulus with a wider coefficient map ($N{=}200$, DeepONet).} Relative $L_2$
+error, mean over five seeds. $\dim a_g$ is the number of interface radii $\beta_\theta$ reads.
+$\varepsilon_{\mathrm{prior}}$ is the error of $u_p$ alone, and an error of one is what a
+prediction of zero gives.}
+\label{tab:beta-dim}
+\footnotesize
+\setlength{\tabcolsep}{7pt}
+\renewcommand{\arraystretch}{0.8}
+\vspace{1mm}
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+ & $\dim a_g$ & $n_b$ & $\varepsilon_{\mathrm{prior}}$ & \armraw & \armprior & \armstruct & \armrand & \armpod\\
+\midrule
+annulus ($L{=}5$)  & $4$  & $216$ & 0.6649 & 0.5774 & 0.5195 & \textbf{0.0251} & 0.5568 & 0.5738\\
+annulus ($L{=}9$)  & $8$  & $408$ & 0.4651 & 0.4912 & 0.4316 & \textbf{0.0469} & 0.4587 & 0.4808\\
+annulus ($L{=}17$) & $16$ & $792$ & 2.9430 & 1.0505 & 1.7106 & \textbf{0.4631} & 2.0394 & 1.9114\\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+The ordering does not depend on the dimension. \armstruct\ is the most accurate arm at all three,
+and its margin over the best of the other four arms narrows from $20.7\times$ at $\dim a_g{=}4$
+to $9.2\times$ at $8$ and $2.3\times$ at $16$ without reversing. The problem itself gets harder as
+$L$ grows: at $L{=}17$ the prior alone is at $2.94$ and every formulation except \armstruct\ is at
+or above $1.00$, the error a prediction of zero would give, while \armstruct\ is at $0.46$. What
+the wider domain costs is visible in absolute terms --- $0.0251$ to $0.4631$ --- but the same
+widening moves the controls further, not closer.
+
+Two qualifications. At $L{=}17$ \armstruct\ does not improve with data in the range we ran
+($0.4631$ at $N{=}25$ and $0.4631$ at $N{=}200$), so the sixteen-dimensional map is not being
+estimated better with more labels at these budgets; the gain there comes from the basis, not from
+learning the coefficients well. And deleting the generic corrector helps slightly rather than
+hurting ($0.4135$ at $L{=}17$ and $0.0432$ at $L{=}9$, against $0.4631$ and $0.0469$), the same
+pattern Appendix~\ref{app:nofree} reports for the other structural benchmarks.
+
+\section{The Prior's Value Beyond Prediction}
+\label{app:prior-value}
+
+The value of the prior is not exhausted by its accuracy as a predictor. On two of the
+benchmarks of Table~\ref{tab:app-e1-spec}, $u_p$ before any residual is learned is
+worse than data-only learning at the smallest budget, and only the composition beats
+both: at $N{=}10$ (Table~\ref{tab:app-e1-raw}), the battery benchmark's prior error is
+$0.5220$ against a \textsc{DeepONet} \armraw\ of $0.4721$, and the one-dimensional heat
+benchmark's prior error is $0.4930$ against a \armraw\ of $0.4015$, with the composed
+predictor \armprior\ reaching $0.2970$ and $0.1989$ respectively. The 3D layered benchmark makes
+the point in reverse: there $u_p$ alone is $0.1751$ while \armraw\ is above $1.1$ at every
+budget, so the prior is the more accurate predictor by a wide margin and yet the \armprior\
+formulation built on it is worse than $u_p$ itself ($0.2377$ at $N{=}200$); only the structured
+branch converts the same construction into an improvement.
+Section~\ref{sec:exp1} pushes the same observation further, to a case where the
+prior loses as a predictor and still supplies the representation that wins.
+
+\section{Scope of the Injected Corrector}
+\label{app:scope}
+
+We also varied the missing physics with the construction of Eq.~\ref{eq:factorized} held fixed. The gain survives a non-separable source, a broader geometry distribution and a weak cubic perturbation, between $1.26$ and $1.63\times$, and disappears when the missing physics is purely cubic, at $1.04\times$. These results suggest that structural injection is most effective when the unmodeled term is linear or dominated by its linear part. The purely cubic case is also the control preventing the diagnostic from being read as a license to add capacity, since the tested family is uninformative and the injected corrector gains nothing in that setting.
+
+
+
+\section{AirfRANS in Full}
+\label{app:airfrans}
+
+
+
+This appendix gives the \textsc{AirfRANS} data, what the prior leaves, and how the
+prior compares with data-derived peers. Every number uses the split, seeds and
+per-sample metric of Table~\ref{tab:airfrans}.
+
+\textbf{Dataset and grid.} We use all $1000$ cases of the public dataset. The
+pressure, divided by density, is sampled on a $60\times40$ Cartesian grid around the
+airfoil; the $181$ grid points inside any of the $1000$ airfoils are dropped from every
+case, leaving the $n_x=2219$ query points of Section~\ref{sec:airfrans}. A fixed
+seeded permutation holds out $200$ cases for evaluation and leaves $800$ as the
+training pool, from which each seed draws its $N\le500$ training cases. The input $a$
+stacks $U_\infty$, $\alpha$ and the upper- and lower-surface ordinates at $16$
+chordwise stations, $34$ numbers standardized by their mean and standard deviation over
+the $1000$ cases, which involves no labels. Over the dataset
+$U_\infty\in[31.28,\,93.59]\,\mathrm{m\,s^{-1}}$ and
+$\alpha\in[-4.94^\circ,\,14.93^\circ]$.
+
+\textbf{Why the scaling law is approximate.} The factorization of Eq.~\ref{eq:cp} is
+exact; Eq.~\ref{eq:invariance} drops the Reynolds argument of $C_p$, and
+\textsc{AirfRANS} does not hold $Re$ fixed: the kinematic viscosity is constant while
+$U_\infty$ varies by a factor of $2.99$, so at unit chord $Re$ runs from
+$2.0\times10^{6}$ to $6.0\times10^{6}$. Under \(v \mapsto \kappa v\) at fixed $\nu$ the
+inertial and pressure terms scale as \(\kappa^{2}\) and \(\nu\nabla^{2} v\) as
+\(\kappa\), while the eddy viscosity, proportional to the velocity scale, scales as
+\(\kappa\) and leaves $\nabla\!\cdot\!(\nu_t\nabla v)$ at \(\kappa^{2}\). The defect is
+therefore confined to where molecular viscosity is not negligible against $\nu_t$, the
+near-wall region at these Reynolds numbers. It is left to the residual corrector, as is
+the linearization in $\alpha$.
+
+\textbf{What the prior leaves.} The residual is $r = q[C_p - c_0 - c_1\alpha]$, so the
+prior removes the leading-order flow-condition dependence but not the $q$ scaling of
+the residual's magnitude. With $u_p$ fitted on the $800$-case training pool and
+evaluated on the $200$ held-out cases, a least-squares regression on $(1,q,q\alpha)$
+explains $R^{2}=0.020$ of the variance of $r$, against $R^{2}=0.896$ for $p^\star$;
+adding $q\alpha^{2}$, $q\log U_\infty$ and $U_\infty$ raises the former only to
+$R^{2}=0.106$. The magnitude still scales with dynamic pressure,
+$\mathrm{corr}(\|r_i\|, q_i)=0.72$, and dividing it out removes the speed dependence,
+$\mathrm{corr}(\|r_i\|/q_i,\, U_{\infty,i})=-0.03$, which is what \textsc{Cp-Prior}
+does by construction. The median of $\|p^\star_i\|/\|r_i\|$ over the held-out cases is
+$3.8$.
+
+\textbf{Is it the scaling law or the fit?} The prior combines the $q(a)$ factor the
+equation supplies with a rank-two profile fitted from labels. \textsc{Cp-net},
+$\hat p=q(a)\,r_\theta(x;a)$, keeps the factor and drops the profile;
+\textsc{Cp-Prior}, $\hat p=u_p+q(a)\,r_\theta(x;a)$, keeps both. Both use the network,
+inputs, loss and budget of \armraw, and \textsc{Cp-Prior} starts at $u_p$ as \armprior\
+does. At $N{=}200$ \textsc{Cp-net} reaches $0.0484$ against $0.0854$ for \armraw\ and
+$0.0507$ for \armprior, and \textsc{Cp-Prior} reaches $0.0292$
+(Table~\ref{tab:airfrans}): the factor alone is worth as much as the fitted profile
+alone, and the two together are worth more than either.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The \textsc{AirfRANS} prior against data-derived peers.} Per-sample
+relative $L_2$ error over the $200$ held-out cases, mean over the five seeds of
+Table~\ref{tab:airfrans}; bold marks the row minimum. \emph{Data only} is the most
+accurate of the three peers of Appendix~\ref{app:peers} on each seed, chosen on the
+held-out error; \emph{ratio} is Data only over \armprior, and \emph{wins} counts the
+seeds in which \armprior\ is more accurate.}
+\label{tab:airfrans-full}
+\footnotesize
+\setlength{\tabcolsep}{17pt}
+\renewcommand{\arraystretch}{0.7}
+  \vspace{1mm}
+\begin{tabular}{@{}rrrrrc@{}}
+\toprule
+Budget & Prior alone & Data only & \armprior & Ratio & Wins \\
+\midrule
+$N=10$  & 0.4166 & 1.0490 & \textbf{0.3958} & 2.65 & 5/5 \\
+$N=25$  & 0.3788 & 0.6948 & \textbf{0.2005} & 3.47 & 5/5 \\
+$N=50$  & 0.3712 & 0.4292 & \textbf{0.1269} & 3.38 & 5/5 \\
+$N=100$ & 0.3529 & 0.2134 & \textbf{0.0801} & 2.66 & 5/5 \\
+$N=200$ & 0.3549 & 0.1499 & \textbf{0.0507} & 2.96 & 5/5 \\
+$N=500$ & 0.3545 & 0.0860 & \textbf{0.0299} & 2.88 & 5/5 \\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+\textbf{A prior that consumes labels.} \textsc{AirfRANS} is the one benchmark whose
+prior is fitted, and since it also carries the paper's headline case for equation
+information without a residual, it is worth saying precisely what the equation
+contributes. The construction is the \emph{indirect} branch of
+Eq.~\ref{eq:solve_outputs}, which is part of the taxonomy rather than an exception to
+it: the equation fixes the functional form and the instance-side factor
+$\psi_{\mathcal{F}_0}(a)=q(a)(1,\alpha)^{\!\top}$ in closed form, before any label is
+seen, and the labels only fill in the spatial profile $c(x)$, two degrees of freedom
+per query point, by ordinary least squares. Those labels are the same $N$ instances
+every formulation receives, so none is given data the others lack, and the fit is determined
+for $N\ge2$, which is why the prior is available at the smallest budget in the sweep.
+Whether the equation or the fit carries the gain is testable, and the first two
+columns of Table~\ref{tab:airfrans-full} are the test. The data-derived peers receive
+strictly more than the prior does: the same $N$ labeled instances, up to twenty basis
+degrees of freedom against our two, and the free-stream velocity and thirty-two
+surface coordinates rather than the dynamic pressure and the angle alone. They still
+lose to the prior alone by $2.52\times$ at $N{=}10$ and $1.83\times$ at $N{=}25$. A fitted
+rank-two model is not in itself a good prior here; it is a good prior because the
+rank-two structure and the $q(a)$ scaling are the ones the momentum equation
+prescribes. We nonetheless keep this benchmark apart from the fourteen label-free
+priors and flag it wherever it appears, and the counts of Sections~\ref{sec:exp1}
+and~\ref{sec:exp2} rest on the label-free ones alone.
+
+\textbf{The prior alone is capped; the composition is not.} As a stand-alone
+predictor the prior beats the best peer in every seed up to $N{=}25$, in four of five
+at $N{=}50$ and in none from $N{=}100$: it is rank two by construction, so its error
+stops falling at $N{=}100$ while the peers keep improving. With the DeepONet corrector
+on top, \armprior\ beats the best peer in every seed at every budget, by $2.65\times$ at
+$N{=}10$ and $2.88\times$ at $N{=}500$, with no trend in $N$. The peers are not neural
+networks, so this ratio changes the learner as well as the anchor; the comparison that
+holds the learner fixed is \armraw\ against \armprior\ in Table~\ref{tab:airfrans},
+where the margin falls from $3.50\times$ to $1.55\times$.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Raw results for the formulations with $\Phi$ (DeepONet).} Relative $L_2$ error,
+mean over five seeds, sample standard deviation in parentheses. \armprior\ is repeated from
+Table~\ref{tab:app-e1-raw} so that each row reads as what the basis adds to the model it extends.
+Optical is the benchmark on which no column separates, and Pipe the one on which \armstruct\ and \armpod\ do not separate at $N{=}200$; the Pipe ladder stops at $N{=}200$.}
+\label{tab:app-e1-raw-phi}
+\footnotesize
+\setlength{\tabcolsep}{12pt}
+\renewcommand{\arraystretch}{0.7}
+  \vspace{1mm}
+\begin{tabular}{llrrrr}
+\toprule
+Benchmark & $N$ & \armprior & \armstruct & \armrand & \armpod\\
+\midrule
+2D Poisson & $10$ & 0.1169\,(0.0175) & 0.0162\,(0.0138) & 0.1180\,(0.0174) & 0.0687\,(0.0135)\\
+ & $25$ & 0.0704\,(0.0092) & 0.0031\,(0.0002) & 0.0721\,(0.0082) & 0.0437\,(0.0054)\\
+ & $50$ & 0.0408\,(0.0031) & 0.0027\,(0.0001) & 0.0423\,(0.0021) & 0.0257\,(0.0035)\\
+ & $100$ & 0.0231\,(0.0007) & 0.0026\,(0.0001) & 0.0249\,(0.0009) & 0.0161\,(0.0024)\\
+ & $200$ & 0.0161\,(0.0006) & 0.0025\,(0.0001) & 0.0179\,(0.0007) & 0.0134\,(0.0004)\\
+ & $500$ & 0.0104\,(0.0004) & 0.0024\,(0.0001) & 0.0129\,(0.0005) & 0.0089\,(0.0012)\\
+ & $1000$ & 0.0061\,(0.0003) & 0.0023\,(0.0003) & 0.0094\,(0.0009) & 0.0088\,(0.0016)\\
+3D layered & $10$ & 0.1908\,(0.0069) & 0.1363\,(0.0244) & 2.5940\,(1.1869) & 0.4882\,(0.1389)\\
+ & $25$ & 0.1995\,(0.0097) & 0.0716\,(0.0048) & 0.7756\,(0.1614) & 0.4110\,(0.0441)\\
+ & $50$ & 0.2147\,(0.0121) & 0.0543\,(0.0025) & 0.4462\,(0.0629) & 0.3628\,(0.0817)\\
+ & $100$ & 0.2295\,(0.0096) & 0.0426\,(0.0024) & 0.2993\,(0.0121) & 0.2841\,(0.0304)\\
+ & $200$ & 0.2377\,(0.0096) & 0.0347\,(0.0023) & 0.2633\,(0.0090) & 0.2253\,(0.0179)\\
+ & $500$ & 0.2516\,(0.0050) & 0.0319\,(0.0016) & 0.2653\,(0.0098) & 0.2229\,(0.0103)\\
+ & $1000$ & 0.2641\,(0.0041) & 0.0302\,(0.0006) & 0.2657\,(0.0118) & 0.2351\,(0.0071)\\
+annulus & $10$ & 0.6866\,(0.0250) & 0.0564\,(0.0039) & 3.2979\,(2.3448) & 1.5854\,(0.4174)\\
+ & $25$ & 0.6181\,(0.0077) & 0.0357\,(0.0025) & 1.2189\,(0.1889) & 1.0616\,(0.1748)\\
+ & $50$ & 0.6386\,(0.0136) & 0.0310\,(0.0040) & 0.8204\,(0.0386) & 0.9524\,(0.1603)\\
+ & $100$ & 0.6082\,(0.0139) & 0.0265\,(0.0016) & 0.6870\,(0.0088) & 0.7643\,(0.1674)\\
+ & $200$ & 0.5195\,(0.0204) & 0.0251\,(0.0013) & 0.5568\,(0.0325) & 0.5738\,(0.0113)\\
+ & $500$ & 0.4491\,(0.0084) & 0.0214\,(0.0007) & 0.4889\,(0.0551) & 0.5192\,(0.0439)\\
+ & $1000$ & 0.3962\,(0.0087) & 0.0201\,(0.0003) & 0.4609\,(0.0829) & 0.5031\,(0.0764)\\
+elasticity & $10$ & 0.2749\,(0.0157) & 0.4317\,(0.0504) & 0.7863\,(0.4395) & 1.2192\,(0.1853)\\
+ & $25$ & 0.2058\,(0.0234) & 0.2978\,(0.0202) & 0.5822\,(0.1841) & 0.8485\,(0.1105)\\
+ & $50$ & 0.1534\,(0.0075) & 0.1838\,(0.0207) & 0.3184\,(0.0102) & 0.6595\,(0.0653)\\
+ & $100$ & 0.1306\,(0.0019) & 0.1008\,(0.0083) & 0.2062\,(0.0215) & 0.4106\,(0.0345)\\
+ & $200$ & 0.1098\,(0.0018) & 0.0626\,(0.0016) & 0.1352\,(0.0035) & 0.2754\,(0.0349)\\
+ & $500$ & 0.0765\,(0.0009) & 0.0447\,(0.0011) & 0.0922\,(0.0034) & 0.2021\,(0.0155)\\
+ & $1000$ & 0.0571\,(0.0016) & 0.0349\,(0.0014) & 0.0735\,(0.0021) & 0.1887\,(0.0058)\\
+optical & $10$ & 0.3796\,(0.0830) & 0.2910\,(0.0396) & 0.3668\,(0.0642) & 0.3146\,(0.0292)\\
+ & $25$ & 0.2402\,(0.0293) & 0.2140\,(0.0155) & 0.2540\,(0.0197) & 0.2454\,(0.0321)\\
+ & $50$ & 0.2152\,(0.0155) & 0.1885\,(0.0147) & 0.2184\,(0.0194) & 0.2157\,(0.0202)\\
+ & $100$ & 0.1652\,(0.0088) & 0.1642\,(0.0085) & 0.1716\,(0.0085) & 0.1693\,(0.0128)\\
+ & $200$ & 0.1229\,(0.0087) & 0.1258\,(0.0059) & 0.1369\,(0.0020) & 0.1252\,(0.0077)\\
+ & $500$ & 0.0600\,(0.0034) & 0.0623\,(0.0023) & 0.0762\,(0.0034) & 0.0611\,(0.0039)\\
+ Pipe & $10$ & 0.1039\,(0.0057) & 0.0877\,(0.0057) & 0.1025\,(0.0040) & 0.0903\,(0.0058)\\
+ & $25$ & 0.0884\,(0.0022) & 0.0602\,(0.0052) & 0.0869\,(0.0019) & 0.0601\,(0.0031)\\
+ & $50$ & 0.0738\,(0.0017) & 0.0438\,(0.0024) & 0.0744\,(0.0025) & 0.0473\,(0.0022)\\
+ & $100$ & 0.0598\,(0.0037) & 0.0316\,(0.0014) & 0.0589\,(0.0036) & 0.0351\,(0.0015)\\
+ & $200$ & 0.0434\,(0.0025) & 0.0244\,(0.0019) & 0.0439\,(0.0025) & 0.0254\,(0.0007)\\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+
+\section{What the Generic Corrector Contributes}
+\label{app:nofree}
+
+Eq.~\ref{eq:structural_injection} carries a generic corrector $\epsilon_\theta$ alongside the
+structured branch, to absorb the part of the residual outside the span of
+$\Phi_{\mathcal{F}_0}$. How much it actually absorbs is measurable: we delete it and
+refit, holding the equation-derived branch, the data, the seeds, the budget and the
+optimizer fixed, so the only change is whether the model may represent anything
+outside $\mathrm{span}\,\Phi_{\mathcal{F}_0}$. The ablated model is exactly the
+structural injection written without its last term,
+$\hat u_\theta = u_p + \Phi_{\mathcal{F}_0}\beta_\theta$. Every cell of the
+\armstruct\ column was re-run in the same pass and agrees with
+Table~\ref{tab:app-e1-raw-phi} to within $5\times10^{-3}$ relative, which is what makes
+the two columns of Table~\ref{tab:nofree} comparable.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{What the generic corrector adds to the structured branch.} Each entry is
+$\armstruct_{\text{no-free}}/\armstruct$, the error with the free corrector removed over the error
+with it; a value near $1$ means the corrector contributes nothing and the structured branch carries
+the result. The parameter column is \armstruct\ against the same model with the corrector deleted,
+and the last column repeats the \armrand/\armstruct\ ratio of Table~\ref{tab:exp1_structural}.}
+\label{tab:nofree}
+\footnotesize
+\setlength{\tabcolsep}{10pt}
+\renewcommand{\arraystretch}{0.7}
+  \vspace{1mm}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+& \multicolumn{5}{c}{budget $N$} & \multicolumn{2}{c}{at $N=200$} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-8}
+Benchmark & 10 & 25 & 50 & 100 & 200 & params & rand/struct \\
+\midrule
+2D Poisson   & 0.20 & 1.07 & 1.27 & 1.23 & 1.31 & $220{,}558\!\to\!258$ & $7.18\times$ \\
+3D layered   & 1.00 & 1.01 & 1.02 & 1.04 & 1.01 & $235{,}374\!\to\!162{,}024$ & $7.58\times$ \\
+annulus      & 1.01 & 0.96 & 0.89 & 0.98 & 0.97 & $38{,}468\!\to\!16{,}368$ & $22.21\times$ \\
+elasticity   & 1.00 & 0.99 & 1.00 & 0.99 & 0.98 & $59{,}914\!\to\!31{,}414$ & $2.16\times$ \\
+optical      & 0.74 & 1.00 & 1.12 & 1.28 & 1.67 & $21{,}916\!\to\!66$ & $1.09\times$ \\
+\bottomrule
+\end{tabular}
+  \vspace{-3mm}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \footnotesize
+    \caption{\textbf{Swapping the anchor, everything else held fixed.} Relative $L_2$ error,
+    mean over five seeds; bold marks the row minimum. The anchors are those listed above, every
+    data-derived one fitted to the same $N$ instances the corrector sees. RB diverges on optical at
+    $N{=}200$ and is marked $\dagger$.}
+    \label{tab:anchor-equal}
+    \setlength{\tabcolsep}{6pt}
+    \renewcommand{\arraystretch}{0.7}
+    \begin{tabular}{@{}llrrrrrr@{}}
+        \toprule
+        Benchmark & $N$ & equation ($u_p$) & Retrieval & RB & RFF & DeepONet & Mean \\
+        \midrule
+        1D Darcy & $10$ & 0.1490 & 0.1815 & 0.3023 & 0.1624 & 0.1690 & \textbf{0.1437} \\
+         & $200$ & 0.0328 & 0.0614 & 0.2179 & 0.0351 & \textbf{0.0268} & 0.0276 \\
+        \addlinespace[2pt]
+        2D Darcy & $10$ & 0.1607 & 0.1613 & \textbf{0.1499} & 0.1593 & 0.3519 & 0.1744 \\
+         & $200$ & \textbf{0.0821} & 0.1091 & 0.1009 & 0.0875 & 0.1104 & 0.0866 \\
+        \addlinespace[2pt]
+        2D Poisson & $10$ & \textbf{0.1169} & 0.6593 & 0.4467 & 0.5715 & 0.7007 & 0.6941 \\
+         & $200$ & \textbf{0.0161} & 0.3817 & 0.0745 & 0.2023 & 0.2214 & 0.2117 \\
+        \addlinespace[2pt]
+        3D Darcy & $10$ & 0.1792 & \textbf{0.1702} & 0.1704 & 0.1774 & 0.5290 & 0.1865 \\
+         & $200$ & 0.1235 & 0.1252 & \textbf{0.0994} & 0.1215 & 0.2005 & 0.1227 \\
+        \addlinespace[2pt]
+        3D layered & $10$ & \textbf{0.1908} & 1.5504 & 4.0656 & 1.6028 & 1.1418 & 1.6015 \\
+         & $200$ & \textbf{0.2377} & 1.8025 & 4.5239 & 1.9351 & 1.6233 & 1.5872 \\
+        \addlinespace[2pt]
+        AirfRANS & $10$ & \textbf{0.3958} & 1.5889 & 1.7960 & 1.2101 & 1.3851 & 1.2671 \\
+         & $200$ & \textbf{0.0507} & 0.3678 & 0.3395 & 0.1112 & 0.0814 & 0.0896 \\
+        \addlinespace[2pt]
+        Annulus & $10$ & \textbf{0.6866} & 1.0388 & 0.9106 & 0.8861 & 0.9974 & 0.9939 \\
+         & $200$ & \textbf{0.5195} & 0.8118 & 0.7117 & 0.6320 & 0.6353 & 0.5765 \\
+        \addlinespace[2pt]
+        Elasticity & $10$ & \textbf{0.2749} & 0.8947 & 0.8360 & 0.8791 & 0.9113 & 0.9201 \\
+         & $200$ & \textbf{0.1098} & 0.6551 & 0.5878 & 0.4815 & 0.5211 & 0.5178 \\
+        \addlinespace[2pt]
+        Optical & $10$ & 0.3796 & 0.5520 & 0.4964 & \textbf{0.3655} & 0.6052 & 0.4827 \\
+         & $200$ & \textbf{0.1229} & 0.1899 & 100.47$^\dagger$ & 0.1418 & 0.1479 & 0.1718 \\
+        \addlinespace[2pt]
+        \bottomrule
+    \end{tabular}
+    \vspace{-3mm}
+\end{table}
+
+
+The corrector is inert wherever the basis is adequate. On 3D layered, annulus and elasticity
+deleting it changes the error by less than $4\%$ at every budget, although it holds most of the
+parameters ($162{,}024$ of $235{,}374$ on 3D layered, $31{,}414$ of $59{,}914$ on elasticity). On
+2D Poisson deleting it \emph{improves} the error fivefold at $N{=}10$ ($0.0032$ against $0.0162$)
+and costs $1.2$--$1.3\times$ from $N{=}25$ on, so the structured branch is not merely sufficient
+there, it is better left alone when labels are scarcest.
+
+Optical is the exception and it is the informative one. Without the corrector the model is
+$0.2106$ at every budget from $N{=}10$ to $N{=}200$, flat and worse than \armprior\ at
+$0.1229$, so on that benchmark the corrector, not the basis, produces the result. This is the
+same benchmark on which Table~\ref{tab:exp1_structural} resolves no difference between
+\armstruct, \armprior\ and \armpod: the construction there returns a first-order sensitivity of
+the prior rather than a basis the residual actually lies in, and the flatness is what an
+inadequate basis looks like.
+
+The parameter counts sharpen the reading. The ablated model on 2D Poisson has $258$ parameters
+against the $220{,}300$ of \armprior\ and is five times more accurate at $N{=}200$ ($0.0033$
+against $0.0161$); on optical it has $66$ and is worse than the prior it extends. Where the
+construction exposes the right subspace, the dimension of what remains to be learned is small
+enough to count; where it does not, no amount of structure substitutes for a learner.
+
+We report \armstruct\ with the corrector throughout the main text, because that is the model every
+reported number was produced by and because it is the form that does not require knowing in
+advance whether $\Phi_{\mathcal{F}_0}$ is adequate. The ablation says what that choice costs where
+the basis is good.
+
+\section{Data-Derived Priors}
+\label{app:peers}
+
+All three peers are fitted, for every seed, to the same $N$ training cases as the
+prior, and receive the $34$ standardized inputs of Appendix~\ref{app:airfrans}: the
+free-stream velocity, the angle of attack and the $32$ surface ordinates. None is a
+neural network. The \textbf{reduced basis} \citep{sirovich1987turbulence} keeps the
+leading $\min(20,N-1)$ POD modes of the centered training fields and maps the input to
+their coefficients by ridge regression with intercept, the weight chosen from
+$10^{-6},\dots,10^{4}$ by three-fold cross-validation on the training cases.
+\textbf{Retrieval} \citep{yue2025deltaphi} predicts a Gaussian-kernel weighted average
+of the training fields in input space, the bandwidth chosen from
+$\{0.1,0.25,0.5,1,2,4\}$ times the median pairwise training distance by leave-one-out
+error on the training cases. The \textbf{learned operator} maps $256$ random Fourier
+features of the input, with frequencies scaled by the inverse of the same median
+distance, to the same POD coefficients by the same cross-validated ridge regression, a
+small kernel surrogate for a learned operator.
+
+Two provisions favor the peers. They see richer inputs than the prior, which receives
+only the dynamic pressure and the angle; and the peer reported for each seed is the
+best of the three on the held-out error, selected after the fact.
+Appendix~\ref{app:anchor} places data-derived anchors, defined there, in the anchor
+slot of the same residual learner on the nine main-text benchmarks.
+
+
+
+
+
+
+
+
+\section{Anchor Ablation Across Benchmarks}
+\label{app:anchor}
+
+Appendix~\ref{app:peers} compares the equation-derived prior with data-derived
+priors on \textsc{AirfRANS} alone. This appendix repeats the comparison on nine
+benchmarks as an ablation of one slot of Eq.~\ref{eq:slots}: the anchor
+$u_0$ is swapped and everything else is held fixed. The corrector is the \armprior\
+corrector throughout, a zero-initialised DeepONet (Appendix~\ref{app:exp1_details})
+trained on $u-u_0$ with the optimisation of Appendix~\ref{app:e1-setting}, so the
+columns differ only in what is placed in front of it.
+
+\textbf{Anchors.} \emph{None}, $u_0=0$, is \armraw. \emph{Equation}, $u_0=u_p$,
+is \armprior. \emph{Retrieval} \citep{yue2025deltaphi} returns the inverse-distance
+weighted mean of the five stored solutions nearest in standardised input space, the
+query instance excluded; with the learned residual on top this is the \textsc{DeltaPhi}
+construction. \emph{Reduced basis} \citep{sirovich1987turbulence} keeps the eight
+leading left singular vectors of the centred stored fields and maps the input to the
+coefficients by least squares. \emph{RFF} is the learned operator of
+Appendix~\ref{app:peers}: $256$ random Fourier features of the input mapped to twenty
+reduced-basis coefficients by cross-validated ridge regression. \emph{DeepONet} is the
+anchor of \citet{ma2026physics}: an operator of the same class and budget as the
+corrector, trained on the same instances with standardised targets, that is, \armraw\
+fitted to them.  \emph{Mean field} is the mean of the stored fields.
+
+\textbf{Information.} Every data-derived anchor is fitted, on each seed, to the same $N$
+training instances the corrector sees, so the comparison is at equal information and the equation
+anchor is the only one consuming no labels. \textsc{AirfRANS} is the exception noted in
+Section~\ref{sec:limitations}: its prior is itself fitted on those instances, so there both sides
+use them.
+
+\textbf{Result.} Table~\ref{tab:anchor-equal} reports nine benchmarks at $N=10$ and $N=200$. The
+equation anchor is the most accurate of the six on twelve of the eighteen rows, and on every row
+of the five benchmarks whose input enters through the geometry or the layout (2D Poisson, 3D
+layered, annulus, elasticity and \textsc{AirfRANS}), where the margin is largest: at $N=200$ it
+is $0.0161$ against $0.0745$ for the best data-derived anchor on 2D Poisson, $0.2377$ against
+$1.5872$ on 3D layered, and $0.1098$ against $0.4815$ on elasticity. Over the nine benchmarks at
+$N=200$ the data anchors are $2.2$ to $3.6\times$ the equation anchor on geometric mean
+(retrieval $3.3$, RB $3.6$ excluding its divergence on optical, RFF $2.3$, DeepONet $2.3$, mean
+field $2.2$).
+
+The six rows it loses are all in the Darcy family, where the effective-medium construction
+leaves $\varepsilon_{\mathrm{prior}}\approx0.19$--$0.22$ and every column falls within a factor of
+two: a learned DeepONet anchor leads on 1D Darcy at $N=200$ ($0.0268$ against $0.0328$), a reduced
+basis on 3D Darcy ($0.0994$ against $0.1235$), and the differences at $N=10$ are within the seed
+spread. This is the same boundary as Table~\ref{tab:exp1_main}: where the construction resolves
+little, what the equation supplies is replaceable by labels; where it resolves the part of the map
+that data cannot cheaply recover, it is not.
+
+\textbf{A learned anchor is not a substitute.} The DeepONet anchor is \armraw\ of the same class
+and budget as the corrector, fitted to the same instances, and it is the arrangement of
+\citet{ma2026physics}. It leads on one of the eighteen rows and is $2.3\times$ the equation anchor
+on geometric mean at $N=200$: stacking a second learner in front of the corrector adds parameters
+and optimisation, not information.
+
+\section{Held-Out Distribution Shift}
+\label{app:ood}
+
+The two equation-derived objects are recomputed for every instance: $u_p$ and
+$\Phi_{\mathcal{F}_0}$ are solves of $\mathcal{F}_0$ on the instance at hand, so they are as
+correct on an input the training set never covered as on one it did. \armraw\ learns the whole
+map from data, and \armpod\ builds its basis from the training residuals; both are tied to the
+distribution they were fitted on. This appendix measures whether that distinction shows up in
+the error.
+
+\textbf{Protocol.} Training is unchanged --- same instances, seeds, budget and optimizer --- and
+only the evaluation set is added, so the in-distribution column is bit-identical to the
+corresponding cell of Table~\ref{tab:exp1_structural}. For the benchmarks whose instance splits
+into load and geometry (2D Poisson excepted), we hold the source, boundary or load data fixed at
+the values of the in-distribution evaluation set and redraw the geometry alone from a widened
+distribution, keeping by rejection only the draws that fall outside the coordinate range the
+training set spans; the shifted set is therefore pure extrapolation in the domain of
+$\beta_\theta$. For 2D Poisson the geometry is fixed and the shift is applied to the input
+function, whose Gaussian random field is made rougher ($\alpha=2\to1.5$) at matched
+root-mean-square. Pipe and optical have no finite geometry vector, so the same rejection is
+applied to the first principal component of the wall profile and of the design profile; Pipe has
+fixed measured data, so instead of redrawing shapes we split its pool by that coordinate and
+train only on the centre.
+
+\begin{table}[H]
+\centering
+\caption{\textbf{Error under distribution shift ($N{=}200$, DeepONet).} Relative $L_2$ error, mean
+over five seeds. ``in'' is the standard evaluation set, ``shifted'' the held-out set described
+above; bold marks the row minimum on the shifted set.}
+\label{tab:ood}
+\footnotesize
+\setlength{\tabcolsep}{7pt}
+\renewcommand{\arraystretch}{0.8}
+\vspace{1mm}
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Benchmark & set & \armraw & \armprior & \armstruct & \armrand & \armpod\\
+\midrule
+2D Poisson   & in      & 0.2240 & 0.0161 & 0.0025 & 0.0179 & 0.0134\\
+             & shifted & 0.2779 & 0.0196 & \textbf{0.0050} & 0.0225 & 0.0164\\
+3D layered   & in      & 1.6102 & 0.2377 & 0.0347 & 0.2633 & 0.2253\\
+             & shifted & 2.8965 & 0.3988 & \textbf{0.1343} & 0.7795 & 0.8390\\
+annulus      & in      & 0.5774 & 0.5195 & 0.0251 & 0.5568 & 0.5738\\
+             & shifted & 2.5677 & 3.0885 & \textbf{0.4065} & 4.4736 & 4.1016\\
+elasticity   & in      & 0.5223 & 0.1098 & 0.0626 & 0.1352 & 0.2754\\
+             & shifted & 0.5635 & \textbf{0.1261} & 0.1335 & 0.1811 & 0.3743\\
+Pipe         & in      & 0.1065 & 0.0435 & 0.0239 & 0.0429 & 0.0251\\
+             & shifted & 0.1330 & 0.0452 & \textbf{0.0236} & 0.0459 & 0.0263\\
+optical      & in      & 0.1605 & 0.1229 & 0.1258 & 0.1369 & 0.1252\\
+             & shifted & 0.3929 & 0.3339 & \textbf{0.3164} & 0.3252 & 0.3307\\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+\textbf{Result.} On the shifted set \armstruct\ is the most accurate formulation on five of the
+six benchmarks, and on Pipe its error does not move at all ($0.0236$ against $0.0239$) while
+\armraw\ degrades by $1.25\times$. The margin is largest where the basis carries the geometry:
+on annulus every other formulation exceeds an error of one, which is what predicting zero would
+give, while \armstruct\ stays at $0.41$; on 3D layered it is $0.13$ against $0.40$ for the next
+best.
+
+These comparisons are of levels, not of ratios. Measured as a ratio to its own in-distribution
+error, \armstruct\ degrades the most --- $16\times$ on annulus against $4.5\times$ for
+\armraw\ --- but only because its in-distribution error is the smallest number in the table. The
+claim the ratio would support, that the structured branch is the most fragile formulation, is
+contradicted by every absolute comparison in the same rows.
+
+Elasticity is the exception: there \armprior\ is ahead of \armstruct\ on the shifted set
+($0.1261$ against $0.1335$), and it stays ahead at every budget ($0.0704$ against $0.0771$ at
+$N{=}1000$). The basis itself still transfers --- \armstruct\ remains ahead of \armrand\ and
+\armpod\ --- so what fails is the coefficient map. Elasticity is the one benchmark whose
+instance factor is a function rather than a few numbers (Appendix~\ref{app:kmax}), so
+$\beta_\theta$ has the most to learn and the least reason to extrapolate. The distinction this
+appendix draws is therefore between the two equation-derived objects: $u_p$ and
+$\Phi_{\mathcal{F}_0}$ are computed per instance and transfer by construction, while
+$\beta_\theta$ is learned and transfers only as far as its training range.
+
+\section{Matched Basis Width and POD-DeepONet}
+\label{app:width}
+
+Two asymmetries could account for the margin of \armstruct\ over \armpod\ in
+Table~\ref{tab:exp1_structural}. First, $\Phi_{\mathcal{F}_0}$ is truncated by the construction
+--- on elasticity the Laurent orders are cut to $|k|\le2$ and the load modes to $|k_B|\le8$,
+giving $n_b=512$ instead of $4096$ (Appendix~\ref{app:kmax}) --- while \armpod\ is given every
+singular vector the training residuals admit, which at $N{=}200$ is $200$ of them; the usual
+practice is to keep far fewer. Second, \armpod\ is a control inside our own architecture, not
+POD-DeepONet \citep{lu2022}, which is a different model and tunes its mode count per problem.
+This appendix removes both asymmetries.
+
+\textbf{Matched width.} We cut all three bases to the same $k$ columns and refit: \armpod\ keeps
+the leading $k$ singular vectors, and $\Phi_{\mathcal{F}_0}$ and the random basis keep the $k$
+columns of largest energy on the training set, so the three arms differ only in where the basis
+came from.
+
+\begin{table}[H]
+\centering
+\caption{\textbf{All three bases cut to the same width ($N{=}200$, DeepONet).} Relative $L_2$
+error, mean over five seeds. ``full'' is the width used in the main text, given in the last
+column. Bold marks the best arm at each width.}
+\label{tab:rank}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{0.8}
+\vspace{1mm}
+\begin{tabular}{@{}llccccc c@{}}
+\toprule
+Benchmark & basis & $k{=}8$ & $k{=}16$ & $k{=}32$ & $k{=}64$ & full & full $n_b$\\
+\midrule
+2D Poisson & \armstruct & \textbf{0.0038} & \textbf{0.0030} & \textbf{0.0026} & \textbf{0.0025} & \textbf{0.0025} & 256\\
+           & \armrand   & 0.0170 & 0.0168 & 0.0170 & 0.0171 & 0.0179 & \\
+           & \armpod    & 0.0128 & 0.0127 & 0.0128 & 0.0132 & 0.0134 & \\
+3D layered & \armstruct & \textbf{0.1988} & \textbf{0.1722} & \textbf{0.1378} & \textbf{0.1025} & \textbf{0.0347} & 3072\\
+           & \armrand   & 0.2402 & 0.2397 & 0.2376 & 0.2399 & 0.2633 & \\
+           & \armpod    & 0.2108 & 0.2100 & 0.2116 & 0.2153 & 0.2253 & \\
+annulus    & \armstruct & \textbf{0.4571} & \textbf{0.3860} & \textbf{0.2835} & \textbf{0.1736} & \textbf{0.0251} & 216\\
+           & \armrand   & 0.5322 & 0.5278 & 0.5244 & 0.5321 & 0.5568 & \\
+           & \armpod    & 0.5706 & 0.5708 & 0.5678 & 0.5756 & 0.5738 & \\
+elasticity & \armstruct & 0.1288 & 0.1368 & 0.1654 & 0.1840 & \textbf{0.0626} & 512\\
+           & \armrand   & \textbf{0.1102} & \textbf{0.1111} & \textbf{0.1143} & \textbf{0.1145} & 0.1352 & \\
+           & \armpod    & 0.3271 & 0.3185 & 0.3005 & 0.2917 & 0.2754 & \\
+optical    & \armstruct & \textbf{0.1221} & 0.1317 & 0.1388 & \textbf{0.1258} & \textbf{0.1258} & 64\\
+           & \armrand   & 0.1232 & 0.1253 & 0.1283 & 0.1369 & 0.1369 & \\
+           & \armpod    & 0.1298 & \textbf{0.1226} & \textbf{0.1267} & 0.1252 & 0.1252 & \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+The width was not what separated the arms. \armpod\ is flat in $k$: its best width is within
+$5\%$ of the full-width number on every benchmark, so narrowing it to the conventional range
+changes no ordering in Table~\ref{tab:exp1_structural}. On 2D Poisson, 3D layered and annulus the
+equation-derived basis is ahead at every $k$, and the margin grows with $k$ rather than with the
+asymmetry: from $3.4\times$, $1.06\times$ and $1.16\times$ at $k{=}8$ to $5.3\times$, $2.1\times$
+and $3.1\times$ at $k{=}64$, against the better of the two controls. The full-width numbers of
+Table~\ref{tab:exp1_structural} continue that trend.
+
+Elasticity is the exception, and it runs the other way: truncating $\Phi_{\mathcal{F}_0}$ by
+training-set energy makes \armstruct\ \emph{worse} as $k$ grows ($0.1288$ at $k{=}8$ to $0.1840$
+at $k{=}64$) and leaves it behind \armrand\ at every $k$, while the full $512$-column basis
+reaches $0.0626$. The Laurent basis there is not ordered by training-set energy --- the fields a
+given shape needs are not the fields that dominate the pooled residual --- so an energy-ranked
+cut keeps the wrong columns. This is a statement about how to truncate, not about how wide to
+be: the construction's own truncation, by Laurent order, is what the main text uses.
+
+\textbf{POD-DeepONet.} The \armpod\ arm is not the model of \citet{lu2022}: it replaces the
+basis inside our decomposition, keeping $u_p$ and the corrector. POD-DeepONet has no prior, sets
+the trunk to the leading $p$ POD modes of the training \emph{solutions} with $\bar y$ as the
+zeroth mode, and lets the branch emit the $p$ coefficients. We run it directly, sweeping $p$ over
+the range that paper uses.
+
+\begin{table}[H]
+\centering
+\caption{\textbf{POD-DeepONet \citep{lu2022} against structural injection ($N{=}200$).} Relative
+$L_2$ error, mean over five seeds, $p$ the number of POD modes in the trunk. The last two columns
+repeat \armstruct\ and $u_p$ alone from Table~\ref{tab:exp1_structural}.}
+\label{tab:poddon}
+\footnotesize
+\setlength{\tabcolsep}{7pt}
+\renewcommand{\arraystretch}{0.8}
+\vspace{1mm}
+\begin{tabular}{@{}lccccc cc@{}}
+\toprule
+Benchmark & $p{=}8$ & $p{=}16$ & $p{=}32$ & $p{=}64$ & $p{=}115$ & \armstruct & $u_p$ alone\\
+\midrule
+2D Poisson & 0.2499 & 0.2494 & 0.2176 & 0.1901 & 0.1779 & \textbf{0.0025} & 0.1827\\
+3D layered & 1.2927 & 1.3809 & 1.3570 & 1.3912 & 1.3003 & \textbf{0.0347} & 0.1751\\
+annulus    & 0.6639 & 0.6478 & 0.6646 & 0.6401 & 0.6223 & \textbf{0.0251} & 0.6649\\
+elasticity & 0.5371 & 0.4850 & 0.5532 & 0.5441 & 0.5275 & \textbf{0.0626} & 0.3214\\
+Pipe       & 0.0416 & 0.0320 & 0.0303 & 0.0293 & 0.0263 & \textbf{0.0244} & 0.1070\\
+optical    & 0.1362 & \textbf{0.1049} & 0.1099 & 0.1127 & 0.1175 & 0.1258 & 0.2941\\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}
+\end{table}
+
+At its best $p$, POD-DeepONet is $7.7$ to $71\times$ above \armstruct\ on 2D Poisson, 3D layered,
+annulus and elasticity, and $1.08\times$ above it on Pipe. On optical it is the most accurate
+model in this paper: $0.1049$ at $p{=}16$, against $0.1258$ for \armstruct\ and $0.1229$ for the
+prior alone with a corrector. Optical is the benchmark whose construction returns a first-order
+sensitivity rather than a solution basis (Appendix~\ref{app:scope}), and the one on which no
+column of Table~\ref{tab:exp1_structural} separates; that a data-derived trunk does better there
+is consistent with the condition the main text states rather than an exception to it.
+
+\section{Relation to Residual and Reference-Based Methods}
+\label{app:related}
+
+In the factorization of Eq.~\ref{eq:slots}, the closest prior methods fill the same
+slots with learned or simulated objects. \textsc{DeltaPhi} \citep{yue2025deltaphi}
+fills the anchor with a retrieved training solution, $u_0=u_{\mathrm{ref}}$, and
+learns $u-u_{\mathrm{ref}}$; the retrieval peer of Appendix~\ref{app:peers} is this
+construction with a kernel weighting, and Table~\ref{tab:airfrans-full} compares the
+best such peer with the equation-derived prior on \textsc{AirfRANS};
+Appendix~\ref{app:anchor} places retrieval in the anchor slot of the same residual
+learner.
+\citet{ma2026physics} fill the anchor with a first DeepONet and the objective with the
+misspecified residual, then correct with a second operator; our \armprior\ formulation differs
+in that the anchor is solved rather than learned. Appendix~\ref{app:anchor} places a learned
+DeepONet anchor in front of our corrector on nine benchmarks at $N{=}200$: it is the more accurate
+of the two on one of them (1D Darcy, $0.0268$ against $0.0328$) and worse on the other eight,
+by $4.7\times$ on elasticity and $6.8\times$ on 3D layered, for a geometric mean of $2.3\times$
+the solved anchor. The other four data-derived anchors behave the same way
+($2.2$--$3.6\times$). \citet{ma2026learning} fill no slot: they
+simulate simplified equations as auxiliary training data, whereas we solve them once
+and never train on them. \citet{dang2026smooth} fill the query-side factor with interface
+locations predicted by an auxiliary network, whereas the layered construction supplies
+$b_j(a)$ in closed form.
+
+POD-DeepONet \citep{lu2022} also fixes the trunk, with the leading POD modes of the
+training fields. In the notation of Section~\ref{sec:structural_injection} it and
+\armstruct\ read
+\begin{equation}
+\begin{aligned}
+\text{POD-DeepONet:}\quad
+&\hat u_\theta(x;a)=\bar u(x)+\sum_{k=1}^{p} b_{\theta,k}(a)\,\phi_k^{\mathrm{POD}}(x),\\
+\text{\armstruct:}\quad
+&\hat u_\theta(x;a)=u_p(x;a)+\sum_{k=1}^{n_b} F_k(a_f)\,\beta_{\theta,k}(a_g)\,S_k(x;a_g)+\epsilon_\theta(x;a),
+\end{aligned}
+\label{eq:pod-contrast}
+\end{equation}
+where $\bar u$ is the mean of the $N$ training fields and $b_\theta$ a branch network. In
+Eq.~\ref{eq:slots}, POD-DeepONet fills the anchor with the mean field and the query-side
+factor with a snapshot basis. The anchor $\bar u$ and the modes $\phi_k^{\mathrm{POD}}$ are
+extracted from labels and are the same for every instance. The anchor $u_p$ and the basis
+$\Phi_{\mathcal{F}_0}$ are constructed from $\mathcal{F}_0$ without labels, and the basis
+changes with the instance, through the source factor and, where the geometry varies, through
+$S_k(x;a_g)$. The POD modes span the solution, whereas $\Phi_{\mathcal{F}_0}$ is built for
+the residual. Two further differences follow. A POD basis has at most $\min(N,n_q)$
+informative columns, whereas the width of $\Phi_{\mathcal{F}_0}$ is fixed by the
+construction; and POD modes are defined on the grid of the snapshots, whereas
+$\Phi_{\mathcal{F}_0}$ is a function of $x$ and can be evaluated on any query set. \armpod\
+isolates where the spatial factor comes from: it keeps $u_p$ and $F$ and replaces $S$ by the
+leading POD modes of the training residuals, label-derived and shared by every instance. The data-derived ingredients of POD-DeepONet already enter
+Appendix~\ref{app:anchor}: the mean-field anchor is its anchor, the reduced-basis anchor
+is its basis with a linear map to the coefficients, and the RFF anchor is its basis with
+a kernel map. The reduced basis is the stronger anchor where the solution is a fixed
+linear low-rank map of the input, so that eight snapshots span it; the equation-derived
+anchor is stronger where labels are few and the geometry varies across instances.
+% TODO(Prior-POD): once the POD-trunk control of Table~\ref{tab:exp1_structural} is run,
+% add one sentence here comparing \armstruct\ with it at small and large N.
+
+\section{Additional Experimental Detail}
+\label{app:details}
+
+\textbf{Cost of the prior against the physics-informed loss.}
+Section~\ref{sec:framework} requires $\mathcal{S}$ to be inexpensive relative to a
+high-fidelity solve, and the two pay their cost on opposite schedules. Solving
+$\mathcal{F}_0$ once per instance, including the polynomial fit of the sensor readings
+that the prior and the residual loss both consume, costs a median of $16\%$ of one training run of \armprior\ over the entire test set, and is
+paid once per instance rather than once per optimization step. The residual loss is
+the opposite: evaluating $\mathcal{F}_0(\hat u;a)$ at collocation points every epoch,
+with the higher-order derivatives that requires, makes one \armpi\ run cost
+$4.4$--$49.5\times$ one \armprior\ run on the same benchmark, before the nine-point
+$\lambda$ sweep \armpi\ additionally receives. Structural injection adds no further
+solve, since $\Phi_{\mathcal{F}_0}$ is a by-product of the same construction.
+
+\textbf{The physics-loss sweep.}
+\armpi\ (Table~\ref{tab:app-e1-raw})
+sweeps $\lambda$ over nine values from $10^{-10}$
+to $1$ and report the best by test error, an oracle the prior condition is not given. On the layered
+benchmark the same sweep applied to a ridge penalty on the residual leaves every setting between
+$0.80$ and $0.96$ times the prior, so regularization cannot manufacture absent structure.
+
+\end{document}
+
+

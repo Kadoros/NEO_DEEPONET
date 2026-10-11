@@ -1,0 +1,201 @@
+26 shapes, 6194s
+
+== ratio_surf (max over shapes, loads) ==
+depth                    shallow      mid     deep
+nu   basis                                        
+0.30 elastic_matched_sc    0.139    0.147    0.145
+     elastic_sc            0.443    0.504    0.524
+     neo                1.18e+03 1.18e+03 1.18e+03
+     neo_inv2_sc           0.147    0.164    0.168
+     neo_rot                 681      681      681
+     neo_rot_inv1_sc       0.152    0.152    0.152
+     neo_rot_inv2_sc       0.141    0.141    0.141
+     neo_rot_sc             0.67    0.725    0.739
+0.49 elastic_matched_sc    0.164    0.164    0.164
+     elastic_sc            0.349    0.404    0.392
+     neo                1.01e+03 1.01e+03 1.01e+03
+     neo_inv2_sc           0.152    0.152    0.152
+     neo_rot                 737      737      737
+     neo_rot_inv1_sc       0.147    0.147    0.147
+     neo_rot_inv2_sc       0.145    0.145    0.145
+     neo_rot_sc            0.773    0.801    0.837
+-- ratio_surf (mean) --
+depth                    shallow    mid   deep
+nu   basis                                    
+0.30 elastic_matched_sc   0.0595 0.0625 0.0643
+     elastic_sc             0.22  0.228  0.243
+     neo                     158    153    140
+     neo_inv2_sc           0.071 0.0706  0.075
+     neo_rot                 102   99.7   87.8
+     neo_rot_inv1_sc      0.0626 0.0621 0.0665
+     neo_rot_inv2_sc      0.0561 0.0573 0.0602
+     neo_rot_sc            0.248  0.262  0.268
+0.49 elastic_matched_sc    0.046 0.0463 0.0443
+     elastic_sc             0.18  0.176   0.18
+     neo                     142    139    127
+     neo_inv2_sc          0.0618 0.0623 0.0643
+     neo_rot                 111    109   97.1
+     neo_rot_inv1_sc      0.0563 0.0562 0.0583
+     neo_rot_inv2_sc      0.0487 0.0502 0.0518
+     neo_rot_sc            0.351  0.385  0.429
+
+== ratio_int (max over shapes, loads) ==
+depth                    shallow      mid     deep
+nu   basis                                        
+0.30 elastic_matched_sc    0.138    0.138    0.141
+     elastic_sc            0.411    0.401    0.452
+     neo                1.23e+03 1.23e+03 1.23e+03
+     neo_inv2_sc           0.146    0.154    0.161
+     neo_rot                 706      706      706
+     neo_rot_inv1_sc       0.152    0.152    0.152
+     neo_rot_inv2_sc       0.141    0.141    0.141
+     neo_rot_sc            0.673    0.701    0.717
+0.49 elastic_matched_sc    0.164    0.164    0.164
+     elastic_sc            0.346     0.33    0.376
+     neo                1.06e+03 1.06e+03 1.06e+03
+     neo_inv2_sc           0.153    0.153    0.153
+     neo_rot                 768      768      768
+     neo_rot_inv1_sc       0.149    0.149    0.149
+     neo_rot_inv2_sc       0.146    0.146    0.146
+     neo_rot_sc            0.756    0.759    0.795
+-- ratio_int (mean) --
+depth                    shallow    mid   deep
+nu   basis                                    
+0.30 elastic_matched_sc   0.0623 0.0634 0.0671
+     elastic_sc            0.209  0.211  0.222
+     neo                     144    143    125
+     neo_inv2_sc          0.0708 0.0696 0.0756
+     neo_rot                90.4   90.2   75.8
+     neo_rot_inv1_sc      0.0643 0.0628 0.0681
+     neo_rot_inv2_sc      0.0577 0.0577 0.0621
+     neo_rot_sc            0.209  0.216   0.23
+0.49 elastic_matched_sc   0.0463 0.0465 0.0461
+     elastic_sc            0.176  0.169  0.175
+     neo                     129    128    113
+     neo_inv2_sc          0.0622 0.0613 0.0645
+     neo_rot                98.8   99.4   85.2
+     neo_rot_inv1_sc      0.0583 0.0568 0.0602
+     neo_rot_inv2_sc      0.0505 0.0504 0.0529
+     neo_rot_sc            0.277  0.285  0.306
+
+== pass rate ratio_surf<=0.2 & ratio_int<=0.2 ==
+depth                    shallow   mid  deep
+nu   basis                                  
+0.30 elastic_matched_sc        1     1     1
+     elastic_sc            0.577 0.538 0.462
+     neo                       0     0     0
+     neo_inv2_sc               1     1     1
+     neo_rot                   0     0     0
+     neo_rot_inv1_sc           1     1     1
+     neo_rot_inv2_sc           1     1     1
+     neo_rot_sc            0.654 0.462 0.462
+0.49 elastic_matched_sc        1     1     1
+     elastic_sc            0.577 0.654 0.692
+     neo                       0     0     0
+     neo_inv2_sc               1     1     1
+     neo_rot                   0     0     0
+     neo_rot_inv1_sc           1     1     1
+     neo_rot_inv2_sc           1     1     1
+     neo_rot_sc            0.231 0.269 0.154
+
+== relL2 (mean) ==
+                         relL2_hom  relL2_lump  span_modes
+nu   basis                                                
+0.30 elastic_matched_sc   2.68e-08     0.00169      -7e-16
+     elastic_sc           3.36e-08     0.00673   -5.98e-16
+     neo                     0.621       0.622      0.0429
+     neo_inv2_sc          2.45e-08     0.00189    5.83e-06
+     neo_rot                 0.419       0.422      0.0221
+     neo_rot_inv1_sc      2.26e-08     0.00162    0.000118
+     neo_rot_inv2_sc      2.38e-08     0.00149    1.14e-06
+     neo_rot_sc           9.17e-08     0.00472      0.0221
+0.49 elastic_matched_sc   2.03e-07     0.00112   -4.36e-16
+     elastic_sc           1.66e-08     0.00526   -3.93e-16
+     neo                     0.663       0.665      0.0398
+     neo_inv2_sc          1.97e-07     0.00164    4.11e-06
+     neo_rot                 0.517        0.52      0.0207
+     neo_rot_inv1_sc      1.77e-07     0.00149       9e-05
+     neo_rot_inv2_sc      1.88e-07     0.00129     8.3e-07
+     neo_rot_sc           4.24e-08     0.00728      0.0207
+
+== lump signal size (mean) ==
+      signal_int                signal_surf               
+depth       deep    mid shallow        deep    mid shallow
+nu                                                        
+0.30      0.0349 0.0455  0.0332      0.0216 0.0333  0.0231
+0.49      0.0377  0.048  0.0355      0.0233 0.0348  0.0249
+
+== cost per shape and nu (median, seconds; 8 jobs in parallel, 2 threads each) ==
+t_neo_s            0.172
+t_replicate_s      0.104
+t_rotfields_s      0.119
+t_orth_rr_s         5.95
+t_lu_s              33.8
+t_iter1_s           71.1
+t_iter2_s           73.3
+t_elastic_eigs_s     598
+t_assemble_K_s      1.04
+t_full_solve_s      66.5
+-- break-even: number of solves with new coefficients E(x) (same load) after which (c) is cheaper --
+                        t_basis_c  t_full_solve_s  t_reduced  breakeven_new_coef
+family        idx nu                                                            
+armadillo     0   0.30        194            61.3       4.01                   5
+                  0.49        196            62.3       3.87                   5
+bunny         0   0.30        265             284       5.86                   2
+                  0.49        274             301       5.95                   2
+cow           0   0.30        190             114        4.6                   3
+                  0.49        192             114       4.72                   3
+dragon        0   0.30        109            98.8       3.99                   3
+                  0.49        109            99.2       3.47                   3
+thingi101619  0   0.30        130            50.2       4.06                   4
+                  0.49        127            51.2       3.89                   4
+thingi103141  0   0.30        184            83.8       7.17                   4
+                  0.49        185            78.5       6.86                   4
+thingi1146172 0   0.30        197              69       5.92                   5
+                  0.49        200            71.2       5.84                   5
+thingi37881   0   0.30        244            65.7       6.03                   6
+                  0.49        247            66.7       5.94                   6
+thingi41732   0   0.30        142            22.2       6.18                  11
+                  0.49        144            22.1       6.86                  11
+thingi472052  0   0.30        123            30.7       2.08                   6
+                  0.49        125            28.5       1.93                   6
+thingi53405   0   0.30        275             160       3.48                   3
+                  0.49        275             161       3.52                   3
+thingi702401  0   0.30        161            35.7       4.55                   7
+                  0.49        172            55.6       3.51                   5
+thingi814677  0   0.30        183            39.6       3.48                   7
+                  0.49        189            35.7       3.34                   7
+
+== ANP spectrum per shape (n_zero = rigid zeros, should be 6) ==
+                  lam12          lam7         n_zero     
+nu                 0.30  0.49    0.30    0.49   0.30 0.49
+family        idx                                        
+armadillo     0   0.318 0.323   0.119   0.119      6    6
+bunny         0    1.33  1.35   0.151   0.162      6    6
+cow           0   0.583 0.586   0.415   0.424      6    6
+dragon        0   0.197 0.204  0.0281  0.0276      6    6
+thingi101619  0    0.14 0.132  0.0172  0.0181      6    6
+thingi103141  0    1.68  1.93   0.499   0.437      6    6
+thingi1146172 0    2.77  2.51   0.645   0.598      6    6
+thingi37881   0     2.8  2.67    1.15    1.08      6    6
+thingi41732   0    3.02     3   0.477   0.477      6    6
+thingi472052  0   0.135 0.172 0.00377 0.00497      6    6
+thingi53405   0    1.97  2.24   0.356    0.38      6    6
+thingi702401  0   0.819 0.841  0.0678  0.0662      6    6
+thingi814677  0     0.9 0.939   0.268   0.272      6    6
+
+== shape indicators ==
+          family  idx    korn  thick   dmax
+0      armadillo    0     152  0.394  0.267
+0          bunny    0     141  0.438    0.4
+0            cow    0     184  0.396  0.246
+0         dragon    0     439  0.269  0.197
+0   thingi101619    0     701  0.339  0.215
+0   thingi103141    0    35.3  0.398  0.428
+0  thingi1146172    0    23.1   0.22  0.254
+0    thingi37881    0    18.1  0.234  0.284
+0    thingi41732    0    56.3  0.341  0.229
+0   thingi472052    0 1.6e+03  0.071 0.0465
+0    thingi53405    0    65.8  0.353  0.305
+0   thingi702401    0     170   0.16  0.134
+0   thingi814677    0      99  0.163  0.105

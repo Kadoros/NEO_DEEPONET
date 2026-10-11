@@ -1,0 +1,17 @@
+{
+  "tag": "test_ood_neo256_net-base",
+  "shapes": 4,
+  "lumps": 10,
+  "s1_matched": 10,
+  "s1_false": 0,
+  "s2_matched": 10,
+  "s2_false": 1,
+  "splits": 1,
+  "s1_in_lump": 2.1057030720321395,
+  "s2_in_lump": 4.149108749322706,
+  "s1_rel_l2": 0.3400510945987382,
+  "s2_rel_l2": 0.07211882836721,
+  "matched_value_mean": 4.559408778342904,
+  "matched_value_median": 4.663456127608223,
+  "t_total_s": 1667.786321401596
+}

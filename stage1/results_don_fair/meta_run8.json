@@ -1,0 +1,12 @@
+{
+  "name": "DON-matched p=256 lr=0.003",
+  "p": 256,
+  "lr": 0.003,
+  "matched": true,
+  "alpha": 0.857421875,
+  "params": 237838,
+  "train_s": 759.0965431788936,
+  "steps": 30000,
+  "best_val": 0.15115049481391907,
+  "status": "early-stopped (val@30k 0.1512 > 1.2x ref 0.1246)"
+}

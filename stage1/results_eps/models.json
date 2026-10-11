@@ -1,0 +1,51 @@
+{
+  "Oracle-mesh96": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.24949573368454972
+  },
+  "G-neo": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.2465315628796816
+  },
+  "(a) L-neo": {
+    "params": 9553,
+    "train_s": 0.0,
+    "infer_ms": 0.5494380318042306
+  },
+  "(b) L-neo+rp": {
+    "params": 9553,
+    "train_s": 0.0,
+    "infer_ms": 0.5583187836843232
+  },
+  "PC-discrete": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": NaN
+  },
+  "(c) L-neo+rp+eps": {
+    "params": 237458,
+    "train_s": 953.6545179509558,
+    "best_val": 0.0017919567180797458,
+    "infer_ms": 4.001109547809595
+  },
+  "(d) L-neo+eps(r)": {
+    "params": 237330,
+    "train_s": 1005.0746584590524,
+    "best_val": 0.0021466948091983795,
+    "infer_ms": 4.239561372540062
+  },
+  "(d') L-neo+eps(r,rp-in)": {
+    "params": 237458,
+    "train_s": 998.3720697888639,
+    "best_val": 0.0017556521343067288,
+    "infer_ms": 4.167810659338203
+  },
+  "DON-base (converged)": {
+    "params": 256065,
+    "train_s": 3645.3500461818185,
+    "steps": 172000,
+    "infer_ms": 1.3226255282966624
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "DON-matched p=256 lr=0.001",
+  "p": 256,
+  "lr": 0.001,
+  "matched": true,
+  "alpha": 0.857421875,
+  "params": 237838,
+  "train_s": 3335.630556542892,
+  "steps": 101000,
+  "best_val": 0.09468083083629608,
+  "status": "plateau",
+  "test_mean": 0.09816865622997284,
+  "infer_ms": 1.70789844252997
+}

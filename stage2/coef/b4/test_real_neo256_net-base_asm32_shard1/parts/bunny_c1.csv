@@ -1,0 +1,2 @@
+name,n_true,n_comp,n_split,oracle,loss_fit,loss_final,t_s,s1_rel_l2,s1_in_lump,s1_n_fit,s1_n_matched,s1_n_false,s2_rel_l2,s2_in_lump,s2_n_fit,s2_n_matched,s2_n_false,values,widths,per_lump
+bunny_c1,1,1,0,6.025112190422183e-05,4.9798707043344025e-05,4.9798707043344025e-05,186.57086515426636,0.2819801902182644,2.1876934643003576,1,1,0,0.051454851488094346,4.389055838648074,1,1,0,[5.101],[0.0143],"[{""centre_err"": 0.0027761120625695757, ""radius_err"": -0.0013532990447878979, ""value"": 5.101389384855703}]"

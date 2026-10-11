@@ -1,0 +1,118 @@
+8 shapes, 1580s
+
+== ratio_surf (max over shapes, loads) ==
+depth                 shallow   mid  deep
+nu   basis                               
+0.30 elastic_sc         0.462 0.453 0.501
+     neo                 84.9  59.1   113
+     neo_rot             19.5  11.7  40.3
+     neo_rot_inv1_sc    0.866 0.657  1.42
+     neo_rot_inv2_sc    0.866 0.657  1.42
+     neo_rot_sc         0.192 0.156 0.358
+0.49 elastic_sc         0.416 0.334  0.47
+     neo                 95.1    66   110
+     neo_rot             46.6  32.2  66.7
+     neo_rot_inv1_sc    0.885 0.673  1.37
+     neo_rot_inv2_sc    0.885 0.673  1.37
+     neo_rot_sc         0.333 0.231 0.949
+-- ratio_surf (mean) --
+depth                 shallow   mid  deep
+nu   basis                               
+0.30 elastic_sc         0.283 0.276 0.308
+     neo                 37.9  25.5  43.2
+     neo_rot             11.2  6.73  13.6
+     neo_rot_inv1_sc    0.537 0.469 0.645
+     neo_rot_inv2_sc    0.536 0.467 0.642
+     neo_rot_sc         0.116 0.098 0.159
+0.49 elastic_sc         0.237 0.209 0.258
+     neo                 39.9  27.5  47.3
+     neo_rot             22.3  15.1  27.2
+     neo_rot_inv1_sc    0.523 0.444 0.621
+     neo_rot_inv2_sc    0.522 0.443 0.618
+     neo_rot_sc         0.238 0.191 0.338
+
+== ratio_int (max over shapes, loads) ==
+depth                 shallow   mid  deep
+nu   basis                               
+0.30 elastic_sc         0.407  0.41 0.529
+     neo                 63.6  41.8   118
+     neo_rot             20.2  11.7  42.5
+     neo_rot_inv1_sc    0.851 0.653  1.41
+     neo_rot_inv2_sc    0.851 0.653  1.41
+     neo_rot_sc         0.182 0.152 0.312
+0.49 elastic_sc         0.365 0.317 0.436
+     neo                   73  47.1   115
+     neo_rot             38.1  24.5  70.2
+     neo_rot_inv1_sc    0.864 0.669  1.36
+     neo_rot_inv2_sc    0.864 0.669  1.36
+     neo_rot_sc         0.304 0.199 0.862
+-- ratio_int (mean) --
+depth                 shallow   mid  deep
+nu   basis                               
+0.30 elastic_sc         0.263 0.262 0.304
+     neo                 31.1  20.1  41.1
+     neo_rot             8.84  5.35  12.9
+     neo_rot_inv1_sc    0.518 0.459 0.636
+     neo_rot_inv2_sc    0.516 0.457 0.634
+     neo_rot_sc         0.125 0.102 0.152
+0.49 elastic_sc         0.224 0.209 0.238
+     neo                 34.3  22.3  44.5
+     neo_rot             19.8  12.8  26.4
+     neo_rot_inv1_sc    0.502 0.433 0.609
+     neo_rot_inv2_sc      0.5  0.43 0.605
+     neo_rot_sc          0.23 0.162 0.304
+
+== pass rate ratio_surf<=0.2 & ratio_int<=0.2 ==
+depth                 shallow  mid  deep
+nu   basis                              
+0.30 elastic_sc          0.25  0.5  0.25
+     neo                    0    0     0
+     neo_rot                0    0     0
+     neo_rot_inv1_sc     0.25 0.25  0.25
+     neo_rot_inv2_sc     0.25 0.25  0.25
+     neo_rot_sc             1    1  0.75
+0.49 elastic_sc           0.5  0.5   0.5
+     neo                    0    0     0
+     neo_rot                0    0     0
+     neo_rot_inv1_sc     0.25 0.25  0.25
+     neo_rot_inv2_sc     0.25 0.25  0.25
+     neo_rot_sc          0.25  0.5  0.25
+
+== relL2 (mean) ==
+                      relL2_hom  relL2_lump  span_modes
+nu   basis                                             
+0.30 elastic_sc        9.38e-10     0.00663   -1.67e-16
+     neo                  0.406       0.407     0.00639
+     neo_rot              0.119       0.121     0.00108
+     neo_rot_inv1_sc   4.93e-09      0.0105       0.263
+     neo_rot_inv2_sc   4.93e-09      0.0104       0.263
+     neo_rot_sc        5.29e-09     0.00265     0.00108
+0.49 elastic_sc        2.55e-10     0.00554   -3.61e-16
+     neo                  0.474       0.475     0.00605
+     neo_rot              0.281       0.283     0.00151
+     neo_rot_inv1_sc   4.03e-09      0.0104       0.258
+     neo_rot_inv2_sc   4.03e-09      0.0103       0.258
+     neo_rot_sc        1.38e-08     0.00528     0.00151
+
+== lump signal size (mean) ==
+      signal_int                signal_surf               
+depth       deep    mid shallow        deep    mid shallow
+nu                                                        
+0.30      0.0216 0.0277  0.0253      0.0154 0.0233  0.0244
+0.49      0.0226   0.03  0.0262       0.016 0.0254  0.0253
+
+== ANP spectrum per shape (n_zero = rigid zeros, should be 6) ==
+            lam12         lam7        n_zero     
+nu           0.30  0.49   0.30   0.49   0.30 0.49
+family  idx                                      
+c_tube  0   0.825 0.813 0.0293 0.0297      6    6
+cup     0    1.46  1.42  0.278  0.266      6    6
+sh_ball 0    3.62   3.2   1.92   1.69      6    6
+torus   0    1.73  1.61  0.314  0.297      6    6
+
+== shape indicators ==
+    family  idx  korn  thick  dmax
+0   c_tube    0   205  0.267 0.186
+0    torus    0  46.7  0.276   0.3
+0      cup    0  41.2  0.157 0.182
+0  sh_ball    0  7.02  0.463 0.613

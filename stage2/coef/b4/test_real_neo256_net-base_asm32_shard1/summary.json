@@ -1,0 +1,17 @@
+{
+  "tag": "test_real_neo256_net-base_asm32",
+  "shapes": 18,
+  "lumps": 35,
+  "s1_matched": 25,
+  "s1_false": 42,
+  "s2_matched": 30,
+  "s2_false": 40,
+  "splits": 3,
+  "s1_in_lump": 1.7298501496705903,
+  "s2_in_lump": 3.402325816120082,
+  "s1_rel_l2": 0.35907457096675666,
+  "s2_rel_l2": 0.15387602902334124,
+  "matched_value_mean": 4.313108044895165,
+  "matched_value_median": 4.755558430406081,
+  "t_total_s": 12497.107905864716
+}

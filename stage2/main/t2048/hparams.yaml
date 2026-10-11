@@ -1,0 +1,167 @@
+cfg:
+  optimizer:
+    max_lr: 0.0003
+    name: muon
+    betas:
+    - 0.9
+    - 0.99
+    weight_decay: 0.04
+  scheduler:
+    name: onecycle
+    warmup: 0.1
+    stable: 0.7
+    schedule: exp
+    final_lr: 1.0e-06
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  model:
+    name: transolver_experimental
+    d_model: 256
+    num_layers: 6
+    num_registers: 0
+    layer_scale_init: 0
+    embed_position:
+      name: sinusoidal
+      num_freqs: 24
+      min_freqs_exp: -2.0
+      max_freqs_exp: 6.0
+    lifting:
+      num_hidden_layers: 0
+      hidden_features: 256
+      act: silu
+      bias: true
+    project:
+      num_hidden_layers: -1
+      hidden_features: 256
+      act: silu
+      bias: true
+    attn:
+      num_heads: 4
+      modes: 256
+      bias: true
+      dim_heads: 72
+      enable_rope: true
+      rope_min_log_freq: -5
+      rope_max_log_freq: 3
+      qk_norm: true
+      norm_type: layernorm
+      ffn:
+        mlp_ratio: 2.66666
+        bias: true
+        act: silu
+        hidden_features: null
+    ffn:
+      mlp_ratio: 2.66666
+      bias: true
+      act: silu
+      hidden_features: null
+    ffn_norm_type: layernorm
+  sol_model:
+    name: transolver_next
+    d_model: 256
+    num_layers: 4
+    num_registers: 4
+    layer_scale_init: 0.22
+    embed_position:
+      name: sinusoidal
+      num_freqs: 63
+      min_freqs_exp: -1.0
+      max_freqs_exp: 6.0
+    lifting:
+      num_hidden_layers: 0
+      hidden_features: 256
+      act: silu
+      bias: true
+    project:
+      num_hidden_layers: -1
+      hidden_features: 256
+      act: silu
+      bias: true
+    attn:
+      num_heads: 4
+      modes: 256
+      bias: true
+      dim_heads: 72
+      enable_rope: true
+      rope_min_log_freq: -5
+      rope_max_log_freq: 3
+      qk_norm: true
+      norm_type: layernorm
+      subgen_enable_temperature: false
+      sdpa_dropout_p: 0.0
+      enable_post_norm: false
+      num_interleaved_layers: 1
+      ffn:
+        mlp_ratio: 2.66666
+        bias: true
+        act: silu
+        hidden_features: null
+    ffn:
+      mlp_ratio: 2.66666
+      bias: true
+      act: silu
+      hidden_features: null
+    ffn_norm_type: layernorm
+  seed: 3407
+  run_name: PerceiverModern
+  experiment_name: final_pretrain_shapenet_h5
+  epochs: 175
+  batch_size: 64
+  fast_dev_run: false
+  check_val_every_n_epoch: 5
+  overfit_batches: 0
+  strategy: auto
+  precision: 16-mixed
+  logger: mlflow
+  profile: false
+  log_every_n_steps: 50
+  targ_dim: 96
+  targ_dim_model: 256
+  model_width: 256
+  model_depth: 6
+  model_modes: 256
+  model_attn_heads: 4
+  model_attn_dim_heads: 72
+  sol_model_width: 256
+  sol_model_depth: 4
+  sol_model_modes: 256
+  sol_model_attn_heads: 4
+  sol_model_attn_dim_heads: 72
+  noise_ratio: 0.68
+  noise_final: 0.0
+  noise_initial: 0.0
+  noise_schedule: cosine
+  ortho_algorithm: qr
+  masking_algorithm: dropout_permute
+  masking_dropout_p_lower: 0.0
+  masking_dropout_p_upper: 0.0
+  masking_plane_height: 0.1
+  training_metrics:
+  - name: projectfrob
+    kwargs:
+      use_root: false
+  - name: selfdistance
+    weight: 0.001
+    kwargs:
+      epsilon: 1.0e-08
+      asymmetric: true
+  validation_metrics:
+  - name: projectfrob
+    weight: 1.0
+    kwargs:
+      use_root: false
+  - name: inversespan
+    weight: 1.0
+    kwargs:
+      norm: 1
+  datamod:
+    name: tet
+    data_dir: /home/cvmlserver7/Hyeon/NEO_DEEPONET/stage2/data_neo2/train_2048
+    batch_size: 64
+    enable_rotate: 6.283
+    num_workers: 6
+    pin_memory: true
+    prefetch_factor: 4
+    split_ratio: 0.9
+    targ_dim: 96
+    seed: 42

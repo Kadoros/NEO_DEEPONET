@@ -1,0 +1,17 @@
+{
+  "tag": "test_real_neoinv2_net-base_asm32",
+  "shapes": 18,
+  "lumps": 33,
+  "s1_matched": 26,
+  "s1_false": 53,
+  "s2_matched": 31,
+  "s2_false": 65,
+  "splits": 17,
+  "s1_in_lump": 1.678373772997043,
+  "s2_in_lump": 3.794885049207988,
+  "s1_rel_l2": 0.37635075863719636,
+  "s2_rel_l2": 0.092387349605685,
+  "matched_value_mean": 3.966778652445966,
+  "matched_value_median": 3.750559795322173,
+  "t_total_s": 14336.307693481445
+}

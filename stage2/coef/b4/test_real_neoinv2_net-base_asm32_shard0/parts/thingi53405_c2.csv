@@ -1,0 +1,2 @@
+name,n_true,n_comp,n_split,oracle,loss_fit,loss_final,t_s,s1_rel_l2,s1_in_lump,s1_n_fit,s1_n_matched,s1_n_false,s2_rel_l2,s2_in_lump,s2_n_fit,s2_n_matched,s2_n_false,values,widths,per_lump
+thingi53405_c2,2,1,0,6.421040864539924e-06,0.0006202292468120001,0.0006202292468120001,197.276869058609,0.33924178688172074,2.1822516080723013,1,1,0,0.33496213202043534,2.902860322385958,1,1,0,[5.756],[0.0232],"[{""centre_err"": 0.0019119141646763724, ""radius_err"": -0.012416093805991735, ""value"": 5.755980632434885}, {""centre_err"": NaN, ""radius_err"": NaN, ""value"": NaN}]"

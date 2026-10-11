@@ -1,0 +1,28 @@
+{
+  "Oracle-mesh96": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.24992906255647537
+  },
+  "G-exact": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.2476515869299571
+  },
+  "G-exact-uncal": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.2481954262798859
+  },
+  "G-neo": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.2579440065245661
+  },
+  "DON-base": {
+    "params": 256065,
+    "train_s": 417.8929117738735,
+    "best_val": 0.17142203450202942,
+    "infer_ms": 1.3402498521221182
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "Oracle-mesh96": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.24949573368454972
+  },
+  "G-neo": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": 0.2465315628796816
+  },
+  "(a) L-neo": {
+    "params": 9553,
+    "train_s": 0.0,
+    "infer_ms": 0.5494380318042306
+  },
+  "(b) L-neo+rp": {
+    "params": 9553,
+    "train_s": 0.0,
+    "infer_ms": 0.5583187836843232
+  },
+  "PC-discrete": {
+    "params": 0,
+    "train_s": 0.0,
+    "infer_ms": NaN
+  },
+  "(c) L-neo+rp+eps": {
+    "params": 237458,
+    "train_s": 953.6545179509558,
+    "best_val": 0.0017919567180797458,
+    "infer_ms": 4.001109547809595
+  }
+}

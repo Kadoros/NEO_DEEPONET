@@ -1,0 +1,14 @@
+{
+ "model": "pdon",
+ "N": 200,
+ "seed": 0,
+ "n_train_shapes": 100,
+ "params": 251936,
+ "t_train_s": 6254.375053167343,
+ "iterations": 40000,
+ "mean_rel": {
+  "test_in": 0.16885406208069373,
+  "test_ood": 0.3406579855053375,
+  "test_real": 0.3139490941599107
+ }
+}

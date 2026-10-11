@@ -1,0 +1,17 @@
+{
+  "tag": "test_ood_arpack128_net-base",
+  "shapes": 17,
+  "lumps": 34,
+  "s1_matched": 30,
+  "s1_false": 0,
+  "s2_matched": 32,
+  "s2_false": 8,
+  "splits": 10,
+  "s1_in_lump": 2.122773616436833,
+  "s2_in_lump": 3.607200957176667,
+  "s1_rel_l2": 0.2955286047497229,
+  "s2_rel_l2": 0.11819953654632309,
+  "matched_value_mean": 4.058644842727766,
+  "matched_value_median": 4.065554582693393,
+  "t_total_s": 1680.465015888214
+}

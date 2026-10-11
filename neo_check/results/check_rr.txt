@@ -1,0 +1,9 @@
+sphere   repo RR (diag SᵀMS, fp32)    signed relerr i=1..95: mean +7.60e-03  min +6.43e-03  max +8.59e-03
+sphere   full RR (dense SᵀMS, fp64)   signed relerr i=1..95: mean +7.52e-03  min +6.35e-03  max +8.51e-03
+sphere   SᵀMS: diag mean 1.0000, max |offdiag| 1.30e-07
+suzanne  repo RR (diag SᵀMS, fp32)    signed relerr i=1..95: mean +2.13e-02  min +1.40e-02  max +3.76e-02
+suzanne  full RR (dense SᵀMS, fp64)   signed relerr i=1..95: mean +2.12e-02  min +1.39e-02  max +3.76e-02
+suzanne  SᵀMS: diag mean 1.0000, max |offdiag| 3.32e-07
+torus    repo RR (diag SᵀMS, fp32)    signed relerr i=1..95: mean +7.70e-03  min +6.70e-03  max +8.70e-03
+torus    full RR (dense SᵀMS, fp64)   signed relerr i=1..95: mean +7.62e-03  min +6.62e-03  max +8.62e-03
+torus    SᵀMS: diag mean 1.0000, max |offdiag| 2.11e-07

@@ -1,0 +1,17 @@
+{
+  "tag": "test_real_arpack256_net-base_asm32",
+  "shapes": 18,
+  "lumps": 35,
+  "s1_matched": 25,
+  "s1_false": 42,
+  "s2_matched": 35,
+  "s2_false": 59,
+  "splits": 27,
+  "s1_in_lump": 1.7298501496705903,
+  "s2_in_lump": 3.8666221903569147,
+  "s1_rel_l2": 0.35907457096675666,
+  "s2_rel_l2": 0.07991165144390153,
+  "matched_value_mean": 3.8134714360099466,
+  "matched_value_median": 4.018605983287426,
+  "t_total_s": 14283.738033771515
+}
